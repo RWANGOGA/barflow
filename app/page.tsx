@@ -2,121 +2,92 @@
 
 import { useMemo, useState } from 'react'
 import {
-  AlertTriangle,
-  ArrowDownToLine,
-  BarChart3,
-  Beer,
-  Bell,
-  Calculator,
-  ChevronDown,
-  CircleHelp,
-  ClipboardList,
-  Clock3,
-  Coffee,
-  CreditCard,
-  Droplets,
-  GlassWater,
-  LayoutDashboard,
-  Menu,
-  MoreHorizontal,
-  Package,
-  Plus,
-  Receipt,
-  Search,
-  Settings,
-  ShieldCheck,
-  ShoppingBag,
-  Sparkles,
-  Tags,
-  UserRound,
-  UsersRound,
-  Wine,
-  X,
+  BarChart3, Bell, CalendarDays, Check, ChevronDown, ClipboardList, Coffee, CreditCard,
+  LayoutDashboard, Menu, Package, Plus, Search, Settings, ShieldCheck, ShoppingBag,
+  Trash2, UserRound, UsersRound, Wine, X, AlertTriangle, ArrowUpRight, Download,
 } from 'lucide-react'
 
-const menuItems = [
-  { name: 'Tusker Lager', category: 'Beer', price: 5000, icon: Beer, color: 'gold' },
-  { name: 'Heineken', category: 'Beer', price: 6500, icon: Beer, color: 'green' },
-  { name: 'Savanna Dry', category: 'Cider', price: 6000, icon: GlassWater, color: 'peach' },
-  { name: 'Jameson Tot', category: 'Spirits', price: 4000, icon: Wine, color: 'burgundy' },
-  { name: 'Coke Zero', category: 'Soft drinks', price: 2500, icon: Coffee, color: 'slate' },
-  { name: 'Gordon’s Gin', category: 'Spirits', price: 4500, icon: Droplets, color: 'teal' },
-  { name: 'Red Bull', category: 'Soft drinks', price: 3500, icon: Sparkles, color: 'pink' },
-  { name: 'House Wine', category: 'Wine', price: 7000, icon: Wine, color: 'rose' },
+type Product = { id: string; name: string; category: string; price: number; stock: number; tone: string }
+type CartItem = Product & { quantity: number }
+
+const products: Product[] = [
+  { id: 'p1', name: 'Tusker Lager', category: 'Beer', price: 5000, stock: 42, tone: 'gold' },
+  { id: 'p2', name: 'Heineken', category: 'Beer', price: 6500, stock: 18, tone: 'green' },
+  { id: 'p3', name: 'Savanna Dry', category: 'Cider', price: 6000, stock: 26, tone: 'peach' },
+  { id: 'p4', name: 'Jameson Tot', category: 'Spirits', price: 4000, stock: 8, tone: 'burgundy' },
+  { id: 'p5', name: 'Coke Zero', category: 'Soft drinks', price: 2500, stock: 54, tone: 'slate' },
+  { id: 'p6', name: 'Gordon’s Gin', category: 'Spirits', price: 4500, stock: 15, tone: 'teal' },
+  { id: 'p7', name: 'Red Bull', category: 'Soft drinks', price: 3500, stock: 31, tone: 'pink' },
+  { id: 'p8', name: 'House Wine', category: 'Wine', price: 7000, stock: 12, tone: 'rose' },
 ]
 
-const navItems = [
-  { label: 'New sale', icon: Calculator },
-  { label: 'Open tabs', icon: ClipboardList, badge: '3' },
+const nav = [
+  { label: 'Overview', icon: LayoutDashboard },
+  { label: 'New sale', icon: CreditCard },
+  { label: 'Open tabs', icon: ClipboardList },
   { label: 'Stock & deliveries', icon: Package },
   { label: 'Reports', icon: BarChart3 },
+  { label: 'Menu & prices', icon: Wine },
+  { label: 'Team & permissions', icon: UsersRound },
 ]
+const money = (value: number) => `UGX ${value.toLocaleString()}`
 
 export default function Page() {
-  const [activeNav, setActiveNav] = useState('New sale')
-  const [category, setCategory] = useState('All items')
+  const [active, setActive] = useState('Overview')
+  const [mobileNav, setMobileNav] = useState(false)
   const [query, setQuery] = useState('')
-  const [order, setOrder] = useState([{ ...menuItems[0], quantity: 2 }, { ...menuItems[3], quantity: 1 }])
+  const [category, setCategory] = useState('All items')
+  const [cart, setCart] = useState<CartItem[]>([])
   const [payment, setPayment] = useState('Cash')
-  const [showPaid, setShowPaid] = useState(false)
+  const [notice, setNotice] = useState('')
 
-  const filteredItems = useMemo(() => menuItems.filter((item) => {
-    const matchesCategory = category === 'All items' || item.category === category
-    return matchesCategory && item.name.toLowerCase().includes(query.toLowerCase())
-  }), [category, query])
+  const filtered = useMemo(() => products.filter((p) => (category === 'All items' || p.category === category) && p.name.toLowerCase().includes(query.toLowerCase())), [category, query])
+  const total = cart.reduce((sum, item) => sum + item.price * item.quantity, 0)
+  const addToCart = (product: Product) => setCart((items) => items.some((i) => i.id === product.id) ? items.map((i) => i.id === product.id ? { ...i, quantity: i.quantity + 1 } : i) : [...items, { ...product, quantity: 1 }])
+  const adjust = (id: string, delta: number) => setCart((items) => items.map((i) => i.id === id ? { ...i, quantity: i.quantity + delta } : i).filter((i) => i.quantity > 0))
 
-  const total = order.reduce((sum, item) => sum + item.price * item.quantity, 0)
-  const addItem = (item: typeof menuItems[number]) => {
-    setOrder((current) => {
-      const existing = current.find((line) => line.name === item.name)
-      return existing ? current.map((line) => line.name === item.name ? { ...line, quantity: line.quantity + 1 } : line) : [...current, { ...item, quantity: 1 }]
-    })
-  }
-  const updateQuantity = (name: string, delta: number) => setOrder((current) => current.map((line) => line.name === name ? { ...line, quantity: line.quantity + delta } : line).filter((line) => line.quantity > 0))
+  const showNotice = (message: string) => { setNotice(message); window.setTimeout(() => setNotice(''), 2800) }
 
   return (
-    <main className="min-h-screen bg-[#f8f5f0] text-[#302823]">
-      <div className="flex min-h-screen">
-        <aside className="hidden w-[248px] shrink-0 flex-col bg-[#302823] px-4 py-5 text-white lg:flex">
-          <div className="flex items-center gap-3 px-3">
-            <div className="flex size-10 items-center justify-center rounded-xl bg-[#e4a86b] text-[#302823]"><Wine /></div>
-            <div><p className="font-serif text-xl font-semibold leading-none">The Sipping Room</p><p className="mt-1 text-[10px] uppercase tracking-[0.2em] text-[#cdbcae]">bar management</p></div>
-          </div>
-          <div className="mt-9 flex flex-col gap-1">
-            <p className="mb-2 px-3 text-[10px] font-bold uppercase tracking-[0.18em] text-[#9f8e80]">Workspace</p>
-            {navItems.map((item) => { const Icon = item.icon; return <button key={item.label} onClick={() => setActiveNav(item.label)} className={`flex items-center justify-between rounded-xl px-3 py-3 text-left text-sm transition ${activeNav === item.label ? 'bg-[#f4eadf] font-semibold text-[#302823]' : 'text-[#ded0c5] hover:bg-[#443933]'}`}><span className="flex items-center gap-3"><Icon className="size-[18px]" />{item.label}</span>{item.badge && <span className={`${activeNav === item.label ? 'bg-[#d88854] text-white' : 'bg-[#66554b text-[#e6d7ca]' } rounded-full px-2 py-0.5 text-[11px]`}>{item.badge}</span>}</button> })}
-          </div>
-          <div className="mt-8 flex flex-col gap-1">
-            <p className="mb-2 px-3 text-[10px] font-bold uppercase tracking-[0.18em] text-[#9f8e80]">Management</p>
-            {[['Menu & prices', Tags], ['Stock counts', ArrowDownToLine], ['Team & permissions', UsersRound]].map(([label, Icon]) => <button key={label as string} onClick={() => setActiveNav(label as string)} className={`flex items-center gap-3 rounded-xl px-3 py-3 text-left text-sm ${activeNav === label ? 'bg-[#f4eadf] font-semibold text-[#302823]' : 'text-[#ded0c5] hover:bg-[#443933]'}`}><Icon className="size-[18px]" />{label as string}</button>)}
-          </div>
-          <div className="mt-auto rounded-2xl border border-[#54463d] bg-[#3b302b] p-3"><div className="flex items-center gap-2 text-[#e4a86b]"><ShieldCheck className="size-4" /><span className="text-xs font-semibold">Till is balanced</span></div><p className="mt-2 text-[11px] leading-relaxed text-[#bbaa9e]">Last sync today at 18:42. All sales are backed up.</p></div>
-          <div className="mt-4 flex items-center gap-3 border-t border-[#51433b] pt-4"><div className="flex size-9 items-center justify-center rounded-full bg-[#d88854] text-sm font-bold">AM</div><div className="min-w-0 flex-1"><p className="truncate text-sm font-semibold">Amina M.</p><p className="text-xs text-[#bbaa9e]">Cashier</p></div><MoreHorizontal className="size-4 text-[#bbaa9e]" /></div>
+    <main className="min-h-screen bg-[#dce9fb] text-[#292d34]">
+      <div className="mx-auto flex min-h-screen max-w-[1600px] bg-[#f7f9fc]">
+        <aside className={`fixed inset-y-0 left-0 z-40 flex w-[270px] flex-col bg-[#282d35] p-5 text-white transition-transform lg:static lg:translate-x-0 ${mobileNav ? 'translate-x-0' : '-translate-x-full'}`}>
+          <div className="flex items-center gap-3 px-2"><div className="flex size-11 items-center justify-center rounded-2xl bg-[#d8e7ff] text-[#282d35]"><Wine /></div><div><p className="text-[17px] font-bold tracking-tight">THE SIPPER</p><p className="text-[10px] font-semibold uppercase tracking-[.2em] text-[#aeb9c8]">bar management</p></div></div>
+          <div className="mt-10 flex flex-col gap-1"><p className="mb-2 px-3 text-[10px] font-bold uppercase tracking-[.16em] text-[#8d98a8]">Workspace</p>{nav.slice(0, 5).map(({ label, icon: Icon }) => <button key={label} onClick={() => { setActive(label); setMobileNav(false) }} className={`flex items-center gap-3 rounded-xl px-3 py-3 text-left text-sm font-semibold transition ${active === label ? 'bg-[#f8fafc] text-[#292d34]' : 'text-[#d0d7e2] hover:bg-[#39414d]'}`}><Icon className="size-[18px]" />{label}{label === 'Open tabs' && <span className="ml-auto rounded-full bg-[#c9e6d1] px-2 py-0.5 text-[10px] text-[#39734c]">3</span>}</button>)}</div>
+          <div className="mt-8 flex flex-col gap-1"><p className="mb-2 px-3 text-[10px] font-bold uppercase tracking-[.16em] text-[#8d98a8]">Management</p>{nav.slice(5).map(({ label, icon: Icon }) => <button key={label} onClick={() => { setActive(label); setMobileNav(false) }} className={`flex items-center gap-3 rounded-xl px-3 py-3 text-left text-sm font-semibold ${active === label ? 'bg-[#f8fafc] text-[#292d34]' : 'text-[#d0d7e2] hover:bg-[#39414d]'}`}><Icon className="size-[18px]" />{label}</button>)}</div>
+          <div className="mt-auto rounded-2xl border border-[#46505e] bg-[#333a45] p-4"><div className="flex items-center gap-2 text-[#c9e6d1]"><ShieldCheck className="size-4" /><span className="text-xs font-bold">Till is balanced</span></div><p className="mt-2 text-[11px] leading-relaxed text-[#aeb9c8]">Last sync today at 18:42. All sales are backed up.</p></div>
+          <div className="mt-4 flex items-center gap-3 border-t border-[#46505e] pt-4"><div className="flex size-9 items-center justify-center rounded-full bg-[#d8e7ff] text-xs font-bold text-[#39485a]">AM</div><div className="flex-1"><p className="text-sm font-bold">Amina M.</p><p className="text-xs text-[#aeb9c8]">Cashier</p></div><Settings className="size-4 text-[#aeb9c8]" /></div>
         </aside>
+        {mobileNav && <button aria-label="Close menu" className="fixed inset-0 z-30 bg-[#222831]/40 lg:hidden" onClick={() => setMobileNav(false)} />}
 
         <section className="min-w-0 flex-1">
-          <header className="flex h-[72px] items-center justify-between border-b border-[#e6ddd5] bg-[#fffdfa] px-5 md:px-8"><div className="flex items-center gap-3"><button className="rounded-lg p-2 hover:bg-[#f3ece5] lg:hidden"><Menu /></button><div><p className="text-xs text-[#9a8980]">Wednesday, 14 October 2026</p><h1 className="font-serif text-[25px] font-semibold">Good evening, Amina</h1></div></div><div className="flex items-center gap-3"><div className="hidden items-center gap-2 rounded-full bg-[#edf6ed] px-3 py-2 text-xs font-semibold text-[#47734b] sm:flex"><span className="size-2 rounded-full bg-[#6aa76e]" />Offline-ready</div><button className="relative rounded-full p-2.5 hover:bg-[#f3ece5]"><Bell className="size-[19px]" /><span className="absolute right-1.5 top-1.5 size-2 rounded-full bg-[#d88854] ring-2 ring-white" /></button><button className="rounded-full p-2.5 hover:bg-[#f3ece5]"><Settings className="size-[19px]" /></button></div></header>
-
-          <div className="grid min-h-[calc(100vh-72px)] grid-cols-1 xl:grid-cols-[minmax(0,1fr)_376px]">
-            <div className="border-r border-[#e6ddd5] p-5 md:p-8">
-              {activeNav !== 'New sale' ? <div className="flex min-h-[600px] flex-col items-center justify-center text-center"><div className="mb-4 flex size-16 items-center justify-center rounded-2xl bg-[#f1e5d9] text-[#a8643e]"><LayoutDashboard /></div><h2 className="font-serif text-3xl font-semibold">{activeNav}</h2><p className="mt-2 max-w-md text-sm text-[#88786f]">This concept keeps every part of the bar in one calm workspace. Use New sale to return to the fast cashier flow.</p><button className="mt-5 rounded-xl bg-[#302823] px-5 py-3 text-sm font-semibold text-white" onClick={() => setActiveNav('New sale')}>Back to new sale</button></div> : <><div className="mb-6 flex items-end justify-between"><div><div className="mb-2 flex items-center gap-2 text-xs font-semibold text-[#9a8980]"><ShoppingBag className="size-4" /> SALE #00482 <span className="text-[#c8bab0]">•</span> OPEN</div><h2 className="font-serif text-3xl font-semibold tracking-tight">Start a new sale</h2><p className="mt-1 text-sm text-[#88786f]">Take an order, select a server, and send it to the bar.</p></div><button className="hidden items-center gap-2 rounded-xl border border-[#ded3ca] bg-white px-3 py-2 text-xs font-semibold text-[#6b5d55] shadow-sm sm:flex"><Clock3 className="size-4" /> Open tabs <span className="rounded-full bg-[#f4eadf] px-1.5 py-0.5 text-[#a8643e]">3</span></button></div>
-
-                <div className="mb-6 grid gap-3 sm:grid-cols-3"><label className="rounded-xl border border-[#e2d8cf] bg-white p-3"><span className="text-[10px] font-bold uppercase tracking-wider text-[#9a8980]">Served by</span><span className="mt-1 flex items-center justify-between text-sm font-semibold">Moses K. <ChevronDown className="size-4 text-[#9a8980]" /></span></label><label className="rounded-xl border border-[#e2d8cf] bg-white p-3"><span className="text-[10px] font-bold uppercase tracking-wider text-[#9a8980]">Table / customer</span><span className="mt-1 flex items-center justify-between text-sm font-semibold">Table 05 <ChevronDown className="size-4 text-[#9a8980]" /></span></label><label className="rounded-xl border border-[#e2d8cf] bg-white p-3"><span className="text-[10px] font-bold uppercase tracking-wider text-[#9a8980]">Price mode</span><span className="mt-1 flex items-center justify-between text-sm font-semibold">Regular <ChevronDown className="size-4 text-[#9a8980]" /></span></label></div>
-
-                <div className="mb-5 flex gap-2 overflow-x-auto pb-1">{['All items', 'Beer', 'Spirits', 'Cider', 'Soft drinks', 'Wine'].map((item) => <button key={item} onClick={() => setCategory(item)} className={`whitespace-nowrap rounded-full px-4 py-2 text-xs font-semibold transition ${category === item ? 'bg-[#302823] text-white' : 'border border-[#ded3ca] bg-white text-[#6f6159] hover:bg-[#f3ece5]'}`}>{item}</button>)}</div>
-                <div className="relative mb-5"><Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-[#a9988f]" /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search drinks by name..." className="h-11 w-full rounded-xl border border-[#e2d8cf] bg-white pl-10 pr-4 text-sm outline-none ring-[#d88854] placeholder:text-[#b5a59c] focus:ring-2" /></div>
-                <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">{filteredItems.map((item) => { const Icon = item.icon; return <button key={item.name} onClick={() => addItem(item)} className="group rounded-2xl border border-[#e6ddd5] bg-white p-3 text-left transition hover:-translate-y-0.5 hover:border-[#d7a078] hover:shadow-[0_8px_24px_rgba(86,55,36,0.08)]"><div className={`mb-3 flex size-10 items-center justify-center rounded-xl item-${item.color}`}><Icon className="size-[19px]" /></div><p className="truncate text-sm font-semibold">{item.name}</p><p className="mt-1 text-xs text-[#9a8980]">{item.category}</p><div className="mt-3 flex items-center justify-between"><span className="text-sm font-bold">UGX {item.price.toLocaleString()}</span><span className="flex size-6 items-center justify-center rounded-full bg-[#f4eadf] text-[#a8643e] transition group-hover:bg-[#d88854] group-hover:text-white"><Plus className="size-4" /></span></div></button> })}</div>
-                <div className="mt-7 flex items-start gap-3 rounded-2xl border border-[#efd3b8] bg-[#fff7ed] p-4"><AlertTriangle className="mt-0.5 size-4 shrink-0 text-[#c77942]" /><div><p className="text-sm font-semibold text-[#7c512f]">Low stock attention</p><p className="mt-1 text-xs leading-relaxed text-[#9c7455]">Jameson Irish Whiskey is below its reorder level. View stock to create a purchase list.</p></div><button className="ml-auto shrink-0 text-xs font-bold text-[#a8643e] underline">View</button></div>
-              </>}
-            </div>
-
-            <aside className="flex flex-col bg-[#fffdfa] p-5 md:p-6"><div className="flex items-center justify-between"><div><h2 className="font-serif text-xl font-semibold">Current order</h2><p className="mt-1 text-xs text-[#9a8980]">Table 05 · Moses K.</p></div><button onClick={() => setOrder([])} className="text-xs font-semibold text-[#a8643e] hover:underline">Clear all</button></div><div className="my-5 h-px bg-[#eee5dd]" /><div className="flex-1">{order.length === 0 ? <div className="flex h-40 flex-col items-center justify-center text-center text-[#a9988f]"><Receipt className="mb-2 size-8" /><p className="text-sm font-semibold">No items yet</p><p className="mt-1 text-xs">Tap a drink to add it</p></div> : <div className="flex flex-col gap-4">{order.map((item) => <div key={item.name} className="flex items-center gap-3"><div className={`flex size-9 shrink-0 items-center justify-center rounded-lg item-${item.color}`}><item.icon className="size-4" /></div><div className="min-w-0 flex-1"><p className="truncate text-sm font-semibold">{item.name}</p><p className="mt-0.5 text-xs text-[#9a8980]">UGX {item.price.toLocaleString()} each</p></div><div className="flex items-center gap-2 rounded-lg border border-[#e5dcd4] bg-[#fcfaf8] p-1"><button onClick={() => updateQuantity(item.name, -1)} className="flex size-5 items-center justify-center rounded text-[#8e7d73] hover:bg-white">−</button><span className="w-4 text-center text-xs font-bold">{item.quantity}</span><button onClick={() => updateQuantity(item.name, 1)} className="flex size-5 items-center justify-center rounded text-[#8e7d73] hover:bg-white">+</button></div><span className="w-[72px] text-right text-sm font-bold">UGX {(item.price * item.quantity).toLocaleString()}</span></div>)}</div>}
-              <button className="mt-6 flex w-full items-center justify-center gap-2 rounded-xl border border-dashed border-[#d6c7bb] py-3 text-xs font-semibold text-[#88786f] hover:bg-[#fcfaf8]"><Plus className="size-4" /> Add a note to this order</button>
-            </div><div className="my-5 h-px bg-[#eee5dd]" /><div className="flex flex-col gap-3 text-sm"><div className="flex justify-between text-[#88786f]"><span>Subtotal</span><span>UGX {total.toLocaleString()}</span></div><div className="flex justify-between text-[#88786f]"><span>Tax (0%)</span><span>UGX 0</span></div><div className="mt-1 flex justify-between text-lg font-bold"><span>Total</span><span>UGX {total.toLocaleString()}</span></div></div><div className="mt-5 grid grid-cols-3 gap-2">{['Cash', 'Mobile money', 'Card'].map((method) => <button key={method} onClick={() => setPayment(method)} className={`rounded-xl border py-2.5 text-[11px] font-bold ${payment === method ? 'border-[#d88854] bg-[#fff3e8] text-[#a8643e]' : 'border-[#e2d8cf] text-[#88786f]'}`}>{method === 'Cash' ? 'Cash' : method === 'Card' ? 'Card' : 'Mobile'}</button>)}</div><button disabled={order.length === 0} onClick={() => setShowPaid(true)} className="mt-3 flex h-12 items-center justify-center gap-2 rounded-xl bg-[#302823] text-sm font-bold text-white shadow-[0_5px_14px_rgba(48,40,35,0.16)] transition hover:bg-[#493a32] disabled:cursor-not-allowed disabled:opacity-40"><Receipt className="size-[18px]" /> Pay & print receipt</button><button className="mt-2 flex h-11 items-center justify-center gap-2 rounded-xl border border-[#ded3ca] text-xs font-bold text-[#6f6159]"><ClipboardList className="size-4" /> Save as open tab</button><p className="mt-4 text-center text-[10px] leading-relaxed text-[#ad9c92]">Receipt will be saved before printing.<br />You can always reprint a COPY later.</p></aside>
+          <header className="flex min-h-[78px] items-center justify-between border-b border-[#e2e7ee] bg-white px-5 md:px-9"><div className="flex items-center gap-3"><button aria-label="Open menu" onClick={() => setMobileNav(true)} className="rounded-xl p-2 hover:bg-[#eef3f9] lg:hidden"><Menu /></button><div><p className="text-xs font-semibold text-[#8a96a5]">Wednesday, 14 October 2026</p><h1 className="mt-1 text-[22px] font-bold tracking-tight">Good evening, Amina</h1></div></div><div className="flex items-center gap-2"><div className="hidden items-center gap-2 rounded-full bg-[#e5f4e9] px-3 py-2 text-xs font-bold text-[#47815a] sm:flex"><span className="size-2 rounded-full bg-[#65b579]" />Online</div><button aria-label="Notifications" className="relative rounded-xl p-2.5 hover:bg-[#eef3f9]"><Bell className="size-[19px]" /><span className="absolute right-2 top-2 size-2 rounded-full bg-[#d8926c] ring-2 ring-white" /></button></div></header>
+          <div className="p-5 md:p-9">
+            {active === 'Overview' && <Overview onNavigate={setActive} />}
+            {active === 'New sale' && <div className="grid gap-7 xl:grid-cols-[minmax(0,1fr)_390px]"><SaleArea filtered={filtered} category={category} setCategory={setCategory} query={query} setQuery={setQuery} addToCart={addToCart} /><Order cart={cart} total={total} adjust={adjust} payment={payment} setPayment={setPayment} onPay={() => { setCart([]); showNotice('Payment recorded. Receipt #000482 is ready.') }} /></div>}
+            {active !== 'Overview' && active !== 'New sale' && <ManagementPage title={active} onNewSale={() => setActive('New sale')} onAction={showNotice} />}
           </div>
         </section>
       </div>
-      {showPaid && <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#302823]/40 p-5"><div className="w-full max-w-sm rounded-3xl bg-[#fffdfa] p-6 text-center shadow-2xl"><button onClick={() => setShowPaid(false)} className="float-right rounded-full p-1 text-[#9a8980] hover:bg-[#f3ece5]"><X className="size-4" /></button><div className="mx-auto flex size-14 items-center justify-center rounded-full bg-[#e6f2e7] text-[#4f8a55]"><Receipt /></div><h2 className="mt-4 font-serif text-2xl font-semibold">Payment recorded</h2><p className="mt-2 text-sm text-[#88786f]">Receipt <span className="font-bold text-[#302823]">#000482</span> is ready to print.</p><div className="mt-5 rounded-2xl bg-[#f8f5f0] p-4 text-left text-sm"><div className="flex justify-between"><span className="text-[#88786f]">Paid by</span><b>{payment}</b></div><div className="mt-2 flex justify-between"><span className="text-[#88786f]">Total</span><b>UGX {total.toLocaleString()}</b></div><div className="mt-2 flex justify-between"><span className="text-[#88786f]">Change</span><b>UGX 0</b></div></div><button onClick={() => { setShowPaid(false); setOrder([]) }} className="mt-5 w-full rounded-xl bg-[#302823] py-3 text-sm font-bold text-white">Done</button></div></div>}
+      {notice && <div role="status" className="fixed bottom-5 right-5 z-50 flex items-center gap-3 rounded-2xl bg-[#282d35] px-5 py-4 text-sm font-bold text-white shadow-2xl"><Check className="size-5 text-[#bce3c6]" />{notice}<button onClick={() => setNotice('')}><X className="size-4 text-[#aeb9c8]" /></button></div>}
     </main>
   )
+}
+
+function Overview({ onNavigate }: { onNavigate: (page: string) => void }) {
+  const stats = [['Today’s sales', 'UGX 1,284,500', '+18.2%', CreditCard], ['Orders served', '84', '+12 today', ShoppingBag], ['Open tabs', '3', 'Needs attention', ClipboardList], ['Low stock items', '4', 'Review stock', AlertTriangle]] as const
+  return <div className="mx-auto max-w-[1180px]"><div className="mb-8 flex flex-wrap items-end justify-between gap-4"><div><p className="mb-2 text-xs font-bold uppercase tracking-[.16em] text-[#8a96a5]">Daily overview</p><h2 className="text-3xl font-bold tracking-tight md:text-4xl">Your bar, at a glance.</h2><p className="mt-2 text-sm text-[#7c8796]">Here’s what’s happening at The Sipper today.</p></div><button onClick={() => onNavigate('New sale')} className="flex items-center gap-2 rounded-xl bg-[#292d34] px-5 py-3 text-sm font-bold text-white shadow-sm"><Plus className="size-4" /> New sale</button></div><div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">{stats.map(([label, value, meta, Icon]) => <div key={label} className="rounded-2xl border border-[#e2e7ee] bg-white p-5 shadow-[0_6px_18px_rgba(57,72,90,.04)]"><div className="flex items-center justify-between"><span className="text-xs font-bold uppercase tracking-wider text-[#8a96a5]">{label}</span><Icon className="size-5 text-[#7c8796]" /></div><p className="mt-5 text-2xl font-bold">{value}</p><p className={`mt-2 text-xs font-bold ${label === 'Low stock items' ? 'text-[#b87555]' : 'text-[#559064]'}`}>{meta}</p></div>)}</div><div className="mt-7 grid gap-7 lg:grid-cols-[1.4fr_1fr]"><div className="rounded-2xl border border-[#e2e7ee] bg-white p-6"><div className="flex items-center justify-between"><div><h3 className="text-lg font-bold">Sales this week</h3><p className="mt-1 text-xs text-[#8a96a5]">Compared with last week</p></div><button className="rounded-xl border border-[#dce3ec] px-3 py-2 text-xs font-bold">This week <ChevronDown className="ml-1 inline size-3" /></button></div><div className="mt-7 flex h-52 items-end gap-3 sm:gap-6">{['Mon','Tue','Wed','Thu','Fri','Sat','Sun'].map((day, i) => <div key={day} className="flex flex-1 flex-col items-center gap-3"><div className={`w-full max-w-12 rounded-t-lg ${i === 6 ? 'bg-[#a9c8f5]' : 'bg-[#dbe8fa]'}`} style={{ height: `${[45, 63, 52, 76, 66, 92, 72][i]}%` }} /><span className="text-[11px] font-semibold text-[#8a96a5]">{day}</span></div>)}</div></div><div className="rounded-2xl border border-[#e2e7ee] bg-white p-6"><div className="flex items-center justify-between"><h3 className="text-lg font-bold">Quick actions</h3><ArrowUpRight className="size-4 text-[#8a96a5]" /></div><div className="mt-5 flex flex-col gap-3">{[['New sale', 'Start a new order', CreditCard], ['Stock count', 'Update inventory levels', Package], ['View reports', 'See your performance', BarChart3]].map(([title, subtitle, Icon]) => <button key={title as string} onClick={() => onNavigate(title === 'New sale' ? 'New sale' : title === 'Stock count' ? 'Stock & deliveries' : 'Reports')} className="flex items-center gap-3 rounded-xl border border-[#e6ebf1] p-3 text-left hover:bg-[#f7f9fc]"><span className="flex size-10 items-center justify-center rounded-xl bg-[#edf4ff] text-[#5d83bb]"><Icon className="size-4" /></span><span className="flex-1"><b className="block text-sm">{title as string}</b><small className="text-xs text-[#8a96a5]">{subtitle as string}</small></span><ChevronDown className="size-4 -rotate-90 text-[#a7b1bd]" /></button>)}</div></div></div></div>
+}
+
+function SaleArea({ filtered, category, setCategory, query, setQuery, addToCart }: { filtered: Product[]; category: string; setCategory: (x: string) => void; query: string; setQuery: (x: string) => void; addToCart: (x: Product) => void }) {
+  return <div><div className="mb-7"><p className="mb-2 text-xs font-bold uppercase tracking-[.16em] text-[#8a96a5]">Sale #00482 · Open</p><h2 className="text-3xl font-bold tracking-tight">Start a new sale</h2><p className="mt-2 text-sm text-[#7c8796]">Take an order, select a server, and send it to the bar.</p></div><div className="mb-6 grid gap-3 sm:grid-cols-3">{['Served by|Moses K.', 'Table / customer|Table 05', 'Price mode|Regular'].map((item) => { const [label, value] = item.split('|'); return <button key={label} className="rounded-2xl border border-[#e0e6ee] bg-white p-4 text-left hover:border-[#b4c9e6]"><span className="block text-[10px] font-bold uppercase tracking-wider text-[#8a96a5]">{label}</span><span className="mt-2 flex items-center justify-between text-sm font-bold">{value}<ChevronDown className="size-4 text-[#8a96a5]" /></span></button> })}</div><div className="mb-4 flex gap-2 overflow-x-auto pb-1">{['All items', 'Beer', 'Spirits', 'Cider', 'Soft drinks', 'Wine'].map((item) => <button key={item} onClick={() => setCategory(item)} className={`whitespace-nowrap rounded-full px-4 py-2 text-xs font-bold ${category === item ? 'bg-[#292d34] text-white' : 'border border-[#dce3ec] bg-white text-[#687587]'}`}>{item}</button>)}</div><div className="relative mb-5"><Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-[#a2adba]" /><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search drinks by name..." className="h-12 w-full rounded-xl border border-[#dce3ec] bg-white pl-10 pr-4 text-sm outline-none focus:border-[#9abbe7] focus:ring-2 focus:ring-[#dce9fb]" /></div><div className="grid grid-cols-2 gap-3 sm:grid-cols-3">{filtered.map((product) => <button key={product.id} onClick={() => addToCart(product)} className="group rounded-2xl border border-[#e0e6ee] bg-white p-4 text-left transition hover:-translate-y-0.5 hover:border-[#9abbe7] hover:shadow-lg"><div className={`item-${product.tone} mb-4 flex size-11 items-center justify-center rounded-xl`}><Wine className="size-5" /></div><p className="truncate text-sm font-bold">{product.name}</p><p className="mt-1 text-xs text-[#8a96a5]">{product.category} · {product.stock} left</p><div className="mt-4 flex items-center justify-between"><span className="text-sm font-bold">{money(product.price)}</span><span className="flex size-7 items-center justify-center rounded-full bg-[#edf4ff] text-[#5d83bb] group-hover:bg-[#292d34] group-hover:text-white"><Plus className="size-4" /></span></div></button>)}</div></div>
+}
+
+function Order({ cart, total, adjust, payment, setPayment, onPay }: { cart: CartItem[]; total: number; adjust: (id: string, d: number) => void; payment: string; setPayment: (x: string) => void; onPay: () => void }) {
+  return <aside className="flex min-h-[560px] flex-col rounded-2xl border border-[#e0e6ee] bg-white p-5 shadow-[0_6px_18px_rgba(57,72,90,.04)]"><div className="flex items-center justify-between"><div><h2 className="text-xl font-bold">Current order</h2><p className="mt-1 text-xs text-[#8a96a5]">Table 05 · Moses K.</p></div><button onClick={() => cart.forEach((item) => adjust(item.id, -item.quantity))} className="text-xs font-bold text-[#b87555]">Clear all</button></div><div className="my-5 h-px bg-[#edf0f4]" />{cart.length === 0 ? <div className="flex flex-1 flex-col items-center justify-center text-center text-[#9ba7b5]"><ShoppingBag className="mb-3 size-9" /><p className="text-sm font-bold">No items yet</p><p className="mt-1 text-xs">Tap a drink to add it</p></div> : <div className="flex flex-1 flex-col gap-4">{cart.map((item) => <div key={item.id} className="flex items-center gap-2"><div className={`item-${item.tone} flex size-9 shrink-0 items-center justify-center rounded-lg`}><Wine className="size-4" /></div><div className="min-w-0 flex-1"><p className="truncate text-sm font-bold">{item.name}</p><p className="text-xs text-[#8a96a5]">{money(item.price)}</p></div><div className="flex items-center gap-2 rounded-lg border border-[#e0e6ee] p-1"><button onClick={() => adjust(item.id, -1)} className="size-5">−</button><span className="w-3 text-center text-xs font-bold">{item.quantity}</span><button onClick={() => adjust(item.id, 1)} className="size-5">+</button></div></div>)}</div>}<div className="my-5 h-px bg-[#edf0f4]" /><div className="flex justify-between text-sm text-[#7c8796]"><span>Subtotal</span><span>{money(total)}</span></div><div className="mt-3 flex justify-between text-lg font-bold"><span>Total</span><span>{money(total)}</span></div><div className="mt-5 grid grid-cols-3 gap-2">{['Cash', 'Mobile money', 'Card'].map((method) => <button key={method} onClick={() => setPayment(method)} className={`rounded-xl border py-3 text-[11px] font-bold ${payment === method ? 'border-[#9abbe7] bg-[#edf4ff] text-[#5078af]' : 'border-[#e0e6ee] text-[#7c8796]'}`}>{method === 'Mobile money' ? 'Mobile' : method}</button>)}</div><button onClick={onPay} disabled={!cart.length} className="mt-3 h-12 rounded-xl bg-[#292d34] text-sm font-bold text-white disabled:opacity-40">Pay & print receipt</button><button className="mt-2 flex h-11 items-center justify-center gap-2 rounded-xl border border-[#dce3ec] text-xs font-bold text-[#687587]"><ClipboardList className="size-4" /> Save as open tab</button></aside>
+}
+
+function ManagementPage({ title, onNewSale, onAction }: { title: string; onNewSale: () => void; onAction: (message: string) => void }) {
+  const rows = title === 'Stock & deliveries' ? products.map((p) => [p.name, p.category, `${p.stock} units`, p.stock < 10 ? 'Low stock' : 'In stock']) : title === 'Open tabs' ? [['Table 05', 'Moses K.', 'UGX 42,000', 'Open'], ['Bar seat 03', 'Amina M.', 'UGX 18,500', 'Open'], ['Table 02', 'John O.', 'UGX 27,000', 'Open']] : [['Today', '84 orders', 'UGX 1,284,500', 'View'], ['Yesterday', '72 orders', 'UGX 1,086,000', 'View'], ['Monday', '65 orders', 'UGX 904,500', 'View']]
+  return <div className="mx-auto max-w-[1180px]"><div className="mb-8 flex flex-wrap items-end justify-between gap-4"><div><p className="mb-2 text-xs font-bold uppercase tracking-[.16em] text-[#8a96a5]">Management</p><h2 className="text-3xl font-bold tracking-tight">{title}</h2><p className="mt-2 text-sm text-[#7c8796]">Keep your bar operations clear, current, and easy to run.</p></div><div className="flex gap-2"><button onClick={onNewSale} className="rounded-xl bg-[#292d34] px-4 py-3 text-sm font-bold text-white">New sale</button><button onClick={() => onAction('Export started')} className="flex items-center gap-2 rounded-xl border border-[#dce3ec] bg-white px-4 py-3 text-sm font-bold"><Download className="size-4" /> Export</button></div></div><div className="grid gap-4 sm:grid-cols-3"><div className="rounded-2xl border border-[#e0e6ee] bg-white p-5"><p className="text-xs font-bold uppercase tracking-wider text-[#8a96a5]">Total records</p><p className="mt-3 text-3xl font-bold">{rows.length}</p></div><div className="rounded-2xl border border-[#e0e6ee] bg-white p-5"><p className="text-xs font-bold uppercase tracking-wider text-[#8a96a5]">Last updated</p><p className="mt-3 text-xl font-bold">Just now</p></div><div className="rounded-2xl border border-[#e0e6ee] bg-white p-5"><p className="text-xs font-bold uppercase tracking-wider text-[#8a96a5]">Status</p><p className="mt-3 text-xl font-bold text-[#4f8d60]">All systems go</p></div></div><div className="mt-7 overflow-hidden rounded-2xl border border-[#e0e6ee] bg-white"><div className="flex items-center justify-between border-b border-[#edf0f4] p-5"><h3 className="font-bold">Recent activity</h3><button onClick={() => onAction('Filters opened')} className="text-xs font-bold text-[#5d83bb]">Filter <ChevronDown className="ml-1 inline size-3" /></button></div><div className="overflow-x-auto"><table className="w-full min-w-[560px] text-left text-sm"><thead className="bg-[#f7f9fc] text-xs uppercase tracking-wider text-[#8a96a5]"><tr><th className="px-5 py-4">Name</th><th className="px-5 py-4">Details</th><th className="px-5 py-4">Amount</th><th className="px-5 py-4">Status</th><th className="px-5 py-4" /></tr></thead><tbody>{rows.map((row, i) => <tr key={i} className="border-t border-[#edf0f4]"><td className="px-5 py-4 font-bold">{row[0]}</td><td className="px-5 py-4 text-[#7c8796]">{row[1]}</td><td className="px-5 py-4 font-semibold">{row[2]}</td><td className="px-5 py-4"><span className={`rounded-full px-3 py-1 text-xs font-bold ${row[3] === 'Low stock' ? 'bg-[#fff0e8] text-[#b87555]' : 'bg-[#e5f4e9] text-[#47815a]'}`}>{row[3]}</span></td><td className="px-5 py-4 text-right"><button onClick={() => onAction(`${row[0]} selected`)} className="rounded-lg p-2 hover:bg-[#eef3f9]"><ArrowUpRight className="size-4" /></button></td></tr>)}</tbody></table></div></div></div>
 }
