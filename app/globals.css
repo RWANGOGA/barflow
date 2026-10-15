@@ -172,5 +172,16 @@
 .item-rose { background: #f3e1dc; color: #a96152; }
 
 .font-serif { font-family: Georgia, 'Times New Roman', serif; }
-button, input { -webkit-tap-highlight-color: transparent; }
+button, input, textarea, select { -webkit-tap-highlight-color: transparent; }
+button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible { outline: 3px solid #9abbe7; outline-offset: 2px; }
+button { cursor: pointer; }
 ::selection { background: #e4a86b; color: #302823; }
+
+@media (max-width: 1023px) {
+  body { overflow-x: hidden; }
+}
+
+@media (max-width: 640px) {
+  h1, h2 { letter-spacing: -0.03em; }
+  input, textarea, select { font-size: 16px; }
+}
