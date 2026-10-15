@@ -5,6 +5,7 @@ import { useSession } from '@/lib/auth-client'
 import { AlertTriangle, ArrowDownToLine, BarChart3, Bell, CalendarDays, Check, ChevronDown, ClipboardCheck, ClipboardList, CreditCard, FileText, LayoutDashboard, Menu, Package, Plus, Printer, ReceiptText, Search, Settings, ShieldCheck, ShoppingBag, SlidersHorizontal, Tags, Trash2, Truck, UserRound, UsersRound, Wine, X } from 'lucide-react'
 
 type Product = { id:string; name:string; category:string; price:number; stock:number; reorder:number; cost:number; unit:string; tone:string }
+const products: Product[] = []
 type Role = 'Cashier'|'Manager'|'Storekeeper'
 type Page = 'Overview'|'New sale'|'Open tabs'|'Stock & deliveries'|'Daily close'|'Reports'|'Menu & prices'|'Team & permissions'|'Audit log'|'Settings'
 type OverviewData = { todaySales:number; orders:number; openTabs:number; week:{label:string;total:number}[]; checklist:{completed:number;total:number} }
