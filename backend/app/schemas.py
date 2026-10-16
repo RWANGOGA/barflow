@@ -18,8 +18,16 @@ class SaleItem(BaseModel):
     quantity: int = Field(gt=0)
     note: str | None = Field(default=None, max_length=200)
 
+
+class SalePaymentItem(BaseModel):
+    method: PaymentMethod
+    amount: int = Field(gt=0)
+
+
 class SaleCreate(BaseModel):
     payment_method: PaymentMethod
+    payment_items: list[SalePaymentItem] | None = Field(default=None, max_length=10)
+    tendered_amount: int | None = Field(default=None, ge=0)
     items: list[SaleItem] = Field(min_length=1)
     table_label: str | None = Field(default=None, max_length=80)
     idempotency_key: str = Field(min_length=8, max_length=128)
@@ -74,3 +82,17 @@ class ReceiptOut(BaseModel):
     is_copy: bool
     printed_at: str
     printed_by: str | None = None
+
+
+class ReceiptReprintCreate(BaseModel):
+    sale_id: str = Field(min_length=1)
+
+
+class SettingCreate(BaseModel):
+    key: str = Field(min_length=1, max_length=100)
+    value: str = Field(min_length=1, max_length=1000)
+
+
+class SettingOut(BaseModel):
+    key: str
+    value: str
