@@ -4,6 +4,12 @@ from backend.app.config import Settings
 from backend.app.main import create_app
 
 
+def test_api_error_contract():
+    response = TestClient(create_app()).get('/test-error')
+    assert response.status_code == 409
+    assert response.json() == {'error': {'code': 'conflict', 'message': 'Test conflict.', 'details': None}}
+
+
 def test_health_check():
     response = TestClient(create_app()).get('/health')
     assert response.status_code == 200

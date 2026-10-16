@@ -1,10 +1,14 @@
 from collections.abc import Awaitable, Callable
 from uuid import uuid4
 
-from fastapi import FastAPI, Request
+from fastapi import Depends, FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
 from .config import Settings, settings as default_settings
+from .auth import RequestActor, get_actor
+from .domain_routes import router as domain_router
+from .errors import ApiError, api_error_response, validation_error_response
 from .db import check_database
 
 
@@ -17,6 +21,9 @@ def create_app(*, app_settings: Settings = default_settings, database_check: Dat
         version="0.1.0",
         description="Backend service for the Barflow bar-management system.",
     )
+    app.include_router(domain_router)
+    app.add_exception_handler(ApiError, lambda request, error: api_error_response(error))
+    app.add_exception_handler(RequestValidationError, validation_error_response)
 
     @app.middleware("http")
     async def request_id_middleware(request: Request, call_next):
@@ -24,6 +31,14 @@ def create_app(*, app_settings: Settings = default_settings, database_check: Dat
         response = await call_next(request)
         response.headers["x-request-id"] = request_id
         return response
+
+    @app.get("/auth/me", tags=["auth"])
+    async def current_actor(actor: RequestActor = Depends(get_actor)) -> dict[str, str]:
+        return {"user_id": actor.user_id, "role": actor.role.value}
+
+    @app.get("/test-error", tags=["system"], include_in_schema=False)
+    def test_error() -> None:
+        raise ApiError(409, "conflict", "Test conflict.")
 
     @app.get("/health", tags=["system"])
     def health_check() -> dict[str, str]:
