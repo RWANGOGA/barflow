@@ -1,0 +1,14 @@
+CREATE TABLE IF NOT EXISTS bar_product (id text PRIMARY KEY, user_id text NOT NULL, name text NOT NULL, category text NOT NULL, price integer NOT NULL CHECK (price > 0), stock integer NOT NULL DEFAULT 0 CHECK (stock >= 0), reorder integer NOT NULL DEFAULT 0 CHECK (reorder >= 0), cost integer NOT NULL DEFAULT 0 CHECK (cost >= 0), unit text NOT NULL, tone text NOT NULL DEFAULT 'slate', created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now());
+CREATE INDEX IF NOT EXISTS bar_product_user_idx ON bar_product(user_id);
+CREATE TABLE IF NOT EXISTS bar_sale (id text PRIMARY KEY, user_id text NOT NULL, payment_method text NOT NULL, total integer NOT NULL CHECK (total > 0), table_label text, status text NOT NULL DEFAULT 'completed' CHECK (status IN ('completed','voided')), created_at timestamptz NOT NULL DEFAULT now());
+CREATE INDEX IF NOT EXISTS bar_sale_user_created_idx ON bar_sale(user_id, created_at DESC);
+CREATE TABLE IF NOT EXISTS bar_stock_movement (id text PRIMARY KEY, user_id text NOT NULL, product_id text NOT NULL REFERENCES bar_product(id), quantity integer NOT NULL CHECK (quantity <> 0), movement_type text NOT NULL, reference text, created_at timestamptz NOT NULL DEFAULT now());
+CREATE INDEX IF NOT EXISTS bar_stock_movement_user_created_idx ON bar_stock_movement(user_id, created_at DESC);
+CREATE TABLE IF NOT EXISTS bar_day (id text PRIMARY KEY, user_id text NOT NULL, business_date date NOT NULL, status text NOT NULL DEFAULT 'open' CHECK (status IN ('open','closed')), opening_float integer NOT NULL DEFAULT 0 CHECK (opening_float >= 0), counted_cash integer CHECK (counted_cash >= 0), closed_at timestamptz, opened_at timestamptz NOT NULL DEFAULT now());
+CREATE UNIQUE INDEX IF NOT EXISTS bar_day_one_open_idx ON bar_day(user_id) WHERE status = 'open';
+CREATE TABLE IF NOT EXISTS bar_tab (id text PRIMARY KEY, user_id text NOT NULL, table_label text NOT NULL, owner_name text NOT NULL, total integer NOT NULL DEFAULT 0 CHECK (total >= 0), status text NOT NULL DEFAULT 'open' CHECK (status IN ('open','settled','voided')), opened_at timestamptz NOT NULL DEFAULT now(), settled_at timestamptz);
+CREATE INDEX IF NOT EXISTS bar_tab_user_status_idx ON bar_tab(user_id, status);
+CREATE TABLE IF NOT EXISTS bar_team_member (id text PRIMARY KEY, user_id text NOT NULL, name text NOT NULL, role text NOT NULL CHECK (role IN ('Admin','Manager','Cashier','Storekeeper')), pin text, created_at timestamptz NOT NULL DEFAULT now());
+CREATE INDEX IF NOT EXISTS bar_team_member_user_idx ON bar_team_member(user_id);
+CREATE TABLE IF NOT EXISTS bar_audit_log (id text PRIMARY KEY, user_id text NOT NULL, action text NOT NULL, record_label text NOT NULL, approval text NOT NULL, created_at timestamptz NOT NULL DEFAULT now());
+CREATE INDEX IF NOT EXISTS bar_audit_log_user_created_idx ON bar_audit_log(user_id, created_at DESC);
