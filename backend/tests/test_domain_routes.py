@@ -100,3 +100,13 @@ def test_inventory_movements_require_authentication():
 def test_inventory_variance_requires_authentication():
     response = TestClient(create_app()).get('/v1/inventory/variance')
     assert response.status_code == 401
+
+
+def test_audit_requires_authentication():
+    response = TestClient(create_app()).get('/v1/audit')
+    assert response.status_code == 401
+
+
+def test_cashier_cannot_read_audit():
+    response = TestClient(create_app()).get('/v1/audit', headers=headers('Cashier'))
+    assert response.status_code == 403
