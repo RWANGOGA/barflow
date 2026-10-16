@@ -1,4 +1,5 @@
-from datetime import date
+import hashlib
+import json
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -23,9 +24,12 @@ async def create_sale(payload: SaleCreate, actor: RequestActor = Depends(get_act
     sale_id = str(uuid4())
     async with connection() as conn:
         async with conn.transaction():
-            existing = await conn.fetchrow('SELECT id, total, payment_method, status FROM bar_sale WHERE user_id = $1 AND idempotency_key = $2', actor.user_id, payload.idempotency_key)
+            request_hash = hashlib.sha256(payload.model_dump_json().encode()).hexdigest()
+            existing = await conn.fetchrow('SELECT request_hash, response_json FROM bar_idempotency_key WHERE user_id = $1 AND idempotency_key = $2 FOR UPDATE', actor.user_id, payload.idempotency_key)
             if existing:
-                return dict(existing)
+                if existing['request_hash'] != request_hash:
+                    raise HTTPException(status_code=409, detail='Idempotency key was already used with a different request.')
+                return existing['response_json']
             total = 0
             products = []
             for item in payload.items:
@@ -38,10 +42,12 @@ async def create_sale(payload: SaleCreate, actor: RequestActor = Depends(get_act
                 products.append((item, product))
             await conn.execute('INSERT INTO bar_sale (id, user_id, payment_method, total, table_label, idempotency_key) VALUES ($1,$2,$3,$4,$5,$6)', sale_id, actor.user_id, payload.payment_method.value, total, payload.table_label, payload.idempotency_key)
             for item, product in products:
-                await conn.execute('INSERT INTO bar_sale_item (id, sale_id, product_id, quantity, unit_price) VALUES ($1,$2,$3,$4,$5)', str(uuid4()), sale_id, item.product_id, item.quantity, product['price'])
+                await conn.execute('INSERT INTO bar_sale_item (id, sale_id, product_id, quantity, unit_price, line_total) VALUES ($1,$2,$3,$4,$5,$6)', str(uuid4()), sale_id, item.product_id, item.quantity, product['price'], product['price'] * item.quantity)
                 await conn.execute('UPDATE bar_product SET stock = stock - $1, updated_at = now() WHERE user_id = $2 AND id = $3', item.quantity, actor.user_id, item.product_id)
                 await conn.execute('INSERT INTO bar_stock_movement (id,user_id,product_id,quantity,movement_type,reference) VALUES ($1,$2,$3,$4,$5,$6)', str(uuid4()), actor.user_id, item.product_id, -item.quantity, 'sale', sale_id)
-            return {'id': sale_id, 'total': total, 'payment_method': payload.payment_method.value, 'status': 'completed'}
+            response = {'id': sale_id, 'total': total, 'payment_method': payload.payment_method.value, 'status': 'completed'}
+            await conn.execute('INSERT INTO bar_idempotency_key (user_id, idempotency_key, request_hash, response_json) VALUES ($1,$2,$3,$4::jsonb)', actor.user_id, payload.idempotency_key, request_hash, json.dumps(response))
+            return response
 
 
 @router.post('/tabs', status_code=201)
