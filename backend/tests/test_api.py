@@ -22,6 +22,13 @@ def test_request_id_is_preserved():
     assert response.headers['x-request-id'] == 'request-123'
 
 
+def test_request_observability_does_not_change_health_response(caplog):
+    with caplog.at_level('INFO', logger='barflow.api'):
+        response = TestClient(create_app()).get('/health')
+    assert response.status_code == 200
+    assert any('http_request' in record.message for record in caplog.records)
+
+
 def test_readiness_requires_database_configuration():
     app = create_app(app_settings=Settings(database_url=''))
     response = TestClient(app).get('/ready')

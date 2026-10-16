@@ -1,4 +1,7 @@
 from collections.abc import Awaitable, Callable
+import json
+import logging
+from time import perf_counter
 from uuid import uuid4
 
 from fastapi import Depends, FastAPI, Request
@@ -14,6 +17,7 @@ from .db import check_database
 
 
 DatabaseCheck = Callable[[], Awaitable[bool]]
+logger = logging.getLogger('barflow.api')
 
 
 def create_app(*, app_settings: Settings = default_settings, database_check: DatabaseCheck = check_database) -> FastAPI:
@@ -30,8 +34,17 @@ def create_app(*, app_settings: Settings = default_settings, database_check: Dat
     @app.middleware("http")
     async def request_id_middleware(request: Request, call_next):
         request_id = request.headers.get("x-request-id") or str(uuid4())
+        started_at = perf_counter()
         response = await call_next(request)
         response.headers["x-request-id"] = request_id
+        logger.info(json.dumps({
+            'event': 'http_request',
+            'request_id': request_id,
+            'method': request.method,
+            'path': request.url.path,
+            'status_code': response.status_code,
+            'duration_ms': round((perf_counter() - started_at) * 1000, 2),
+        }))
         return response
 
     @app.get("/auth/me", tags=["auth"])
