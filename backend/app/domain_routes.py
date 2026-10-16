@@ -18,6 +18,10 @@ def authorized(actor: RequestActor, permission: str) -> Actor:
     return identity
 
 
+async def write_audit(conn, actor: RequestActor, action: str, entity_type: str, entity_id: str, reason: str | None = None, metadata: dict | None = None):
+    await conn.execute('INSERT INTO bar_audit_log (id,user_id,actor_role,action,entity_type,entity_id,reason,metadata) VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb)', str(uuid4()), actor.user_id, actor.role.value, action, entity_type, entity_id, reason, json.dumps(metadata or {}))
+
+
 @router.post('/sales', status_code=201)
 async def create_sale(payload: SaleCreate, actor: RequestActor = Depends(get_actor)):
     authorized(actor, 'sales.create')
@@ -140,6 +144,7 @@ async def settle_tab(tab_id: str, payload: TabSettle, actor: RequestActor = Depe
                 await conn.execute('INSERT INTO bar_stock_movement (id,user_id,product_id,quantity,movement_type,reference) VALUES ($1,$2,$3,$4,$5,$6)', str(uuid4()), actor.user_id, item['product_id'], -item['quantity'], 'sale', sale_id)
             response = {'tab_id': tab_id, 'sale_id': sale_id, 'total': tab['total'], 'payment_method': payload.payment_method.value, 'status': 'settled'}
             await conn.execute("UPDATE bar_tab SET status='settled', payment_method=$1, settled_by=$2, sale_id=$3, settled_at=now() WHERE id=$4 AND user_id=$5", payload.payment_method.value, actor.user_id, sale_id, tab_id, actor.user_id)
+            await write_audit(conn, actor, 'settle', 'tab', tab_id, metadata={'sale_id': sale_id, 'total': str(tab['total']), 'payment_method': payload.payment_method.value})
             await conn.execute('INSERT INTO bar_idempotency_key (user_id,idempotency_key,request_hash,response_json) VALUES ($1,$2,$3,$4::jsonb)', actor.user_id, payload.idempotency_key, request_hash, json.dumps(response))
     return response
 
@@ -152,6 +157,7 @@ async def void_tab(tab_id: str, payload: TabVoid, actor: RequestActor = Depends(
             row = await conn.fetchrow("UPDATE bar_tab SET status='voided', voided_by=$1, void_reason=$2 WHERE id=$3 AND user_id=$4 AND status='open' RETURNING id, status, void_reason, voided_by", actor.user_id, payload.reason, tab_id, actor.user_id)
             if not row:
                 raise HTTPException(status_code=404, detail='Open tab was not found.')
+            await write_audit(conn, actor, 'void', 'tab', tab_id, payload.reason)
     return dict(row)
 
 
@@ -163,6 +169,7 @@ async def reopen_tab(tab_id: str, payload: TabReopen, actor: RequestActor = Depe
             row = await conn.fetchrow("UPDATE bar_tab SET status='open', reopened_by=$1, reopen_reason=$2, settled_at=NULL, payment_method=NULL, settled_by=NULL, sale_id=NULL WHERE id=$3 AND user_id=$4 AND status='settled' RETURNING id, status, reopen_reason, reopened_by", actor.user_id, payload.reason, tab_id, actor.user_id)
             if not row:
                 raise HTTPException(status_code=404, detail='Settled tab was not found.')
+            await write_audit(conn, actor, 'reopen', 'tab', tab_id, payload.reason)
     return dict(row)
 
 
@@ -192,6 +199,7 @@ async def create_inventory_count(payload: InventoryCountCreate, actor: RequestAc
                 raise HTTPException(status_code=404, detail='Product was not found.')
             variance = payload.counted_quantity - product['stock']
             row = await conn.fetchrow('INSERT INTO bar_inventory_count (id,user_id,product_id,system_quantity,counted_quantity,variance,counted_by,notes) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id,product_id,system_quantity,counted_quantity,variance,counted_by,notes,created_at', str(uuid4()), actor.user_id, payload.product_id, product['stock'], payload.counted_quantity, variance, actor.user_id, payload.notes)
+            await write_audit(conn, actor, 'count', 'inventory_count', row['id'], payload.notes, {'product_id': payload.product_id, 'variance': variance})
     return dict(row)
 
 
@@ -212,6 +220,7 @@ async def create_stock_adjustment(payload: StockAdjustmentCreate, actor: Request
             row = await conn.fetchrow('INSERT INTO bar_stock_adjustment (id,user_id,product_id,quantity,adjustment_type,reason,created_by) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id,product_id,quantity,adjustment_type,reason,created_by,created_at', adjustment_id, actor.user_id, payload.product_id, payload.quantity, payload.adjustment_type, payload.reason, actor.user_id)
             await conn.execute('UPDATE bar_product SET stock=$1, updated_at=now() WHERE id=$2 AND user_id=$3', new_stock, payload.product_id, actor.user_id)
             await conn.execute('INSERT INTO bar_stock_movement (id,user_id,product_id,quantity,movement_type,reference) VALUES ($1,$2,$3,$4,$5,$6)', str(uuid4()), actor.user_id, payload.product_id, payload.quantity, payload.adjustment_type, adjustment_id)
+            await write_audit(conn, actor, payload.adjustment_type, 'stock_adjustment', adjustment_id, payload.reason, {'product_id': payload.product_id, 'quantity': payload.quantity})
     return dict(row)
 
 
@@ -228,6 +237,14 @@ async def list_inventory_counts(actor: RequestActor = Depends(get_actor), limit:
     authorized(actor, 'inventory.manage')
     async with connection() as conn:
         rows = await conn.fetch('SELECT id,product_id,system_quantity,counted_quantity,variance,counted_by,notes,created_at FROM bar_inventory_count WHERE user_id=$1 ORDER BY created_at DESC LIMIT $2', actor.user_id, limit)
+    return {'items': [dict(row) for row in rows]}
+
+
+@router.get('/audit')
+async def list_audit_logs(actor: RequestActor = Depends(get_actor), limit: int = Query(default=100, ge=1, le=200), entity_type: str | None = None):
+    authorized(actor, 'audit.read')
+    async with connection() as conn:
+        rows = await conn.fetch('SELECT id,actor_role,action,entity_type,entity_id,reason,metadata,created_at FROM bar_audit_log WHERE user_id=$1 AND ($2::text IS NULL OR entity_type=$2) ORDER BY created_at DESC LIMIT $3', actor.user_id, entity_type, limit)
     return {'items': [dict(row) for row in rows]}
 
 

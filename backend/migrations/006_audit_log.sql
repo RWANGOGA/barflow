@@ -1,0 +1,10 @@
+ALTER TABLE public.bar_audit_log ADD COLUMN IF NOT EXISTS user_id text;
+ALTER TABLE public.bar_audit_log ADD COLUMN IF NOT EXISTS actor_role text;
+ALTER TABLE public.bar_audit_log ADD COLUMN IF NOT EXISTS action text;
+ALTER TABLE public.bar_audit_log ADD COLUMN IF NOT EXISTS entity_type text;
+ALTER TABLE public.bar_audit_log ADD COLUMN IF NOT EXISTS entity_id text;
+ALTER TABLE public.bar_audit_log ADD COLUMN IF NOT EXISTS reason text;
+ALTER TABLE public.bar_audit_log ADD COLUMN IF NOT EXISTS metadata jsonb DEFAULT '{}'::jsonb;
+ALTER TABLE public.bar_audit_log ADD COLUMN IF NOT EXISTS created_at timestamptz DEFAULT now();
+CREATE INDEX IF NOT EXISTS bar_audit_log_user_created_idx ON public.bar_audit_log(user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS bar_audit_log_entity_idx ON public.bar_audit_log(entity_type, entity_id, created_at DESC);
