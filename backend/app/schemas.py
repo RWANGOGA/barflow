@@ -33,6 +33,10 @@ class TabItemCreate(BaseModel):
 class TabItemUpdate(BaseModel):
     quantity: int = Field(gt=0)
 
+class TabSettle(BaseModel):
+    payment_method: PaymentMethod
+    idempotency_key: str = Field(min_length=8, max_length=128)
+
 class Page(BaseModel):
     items: list[dict]
     next_cursor: str | None = None

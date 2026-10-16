@@ -50,3 +50,13 @@ def test_update_tab_item_requires_positive_quantity():
 def test_remove_tab_item_requires_authentication():
     response = TestClient(create_app()).delete('/v1/tabs/tab-1/items/item-1')
     assert response.status_code == 401
+
+
+def test_settle_tab_requires_authentication():
+    response = TestClient(create_app()).post('/v1/tabs/tab-1/settle', json={'payment_method': 'cash', 'idempotency_key': 'settle-12345'})
+    assert response.status_code == 401
+
+
+def test_settle_tab_validates_idempotency_key():
+    response = TestClient(create_app()).post('/v1/tabs/tab-1/settle', headers=headers(), json={'payment_method': 'cash', 'idempotency_key': 'short'})
+    assert response.status_code == 422
