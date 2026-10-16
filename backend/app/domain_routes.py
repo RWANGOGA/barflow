@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from .auth import RequestActor, get_actor
 from .authorization import Actor, require_permission
 from .db import connection
-from .schemas import InventoryCountCreate, SaleCreate, StockAdjustmentCreate, TabCreate, TabItemCreate, TabItemUpdate, TabSettle, TabVoid, TabReopen
+from .schemas import InventoryCountCreate, ReceiptCreate, ReceiptOut, SaleCreate, StockAdjustmentCreate, TabCreate, TabItemCreate, TabItemUpdate, TabSettle, TabVoid, TabReopen
 
 router = APIRouter(prefix='/v1', tags=['domain'])
 
@@ -46,12 +46,27 @@ async def create_sale(payload: SaleCreate, actor: RequestActor = Depends(get_act
                 products.append((item, product))
             await conn.execute('INSERT INTO bar_sale (id, user_id, payment_method, total, table_label, idempotency_key) VALUES ($1,$2,$3,$4,$5,$6)', sale_id, actor.user_id, payload.payment_method.value, total, payload.table_label, payload.idempotency_key)
             for item, product in products:
-                await conn.execute('INSERT INTO bar_sale_item (id, sale_id, product_id, quantity, unit_price, line_total) VALUES ($1,$2,$3,$4,$5,$6)', str(uuid4()), sale_id, item.product_id, item.quantity, product['price'], product['price'] * item.quantity)
+                await conn.execute('INSERT INTO bar_sale_item (id, sale_id, product_id, quantity, unit_price, line_total, note) VALUES ($1,$2,$3,$4,$5,$6,$7)', str(uuid4()), sale_id, item.product_id, item.quantity, product['price'], product['price'] * item.quantity, item.note)
                 await conn.execute('UPDATE bar_product SET stock = stock - $1, updated_at = now() WHERE user_id = $2 AND id = $3', item.quantity, actor.user_id, item.product_id)
                 await conn.execute('INSERT INTO bar_stock_movement (id,user_id,product_id,quantity,movement_type,reference) VALUES ($1,$2,$3,$4,$5,$6)', str(uuid4()), actor.user_id, item.product_id, -item.quantity, 'sale', sale_id)
-            response = {'id': sale_id, 'total': total, 'payment_method': payload.payment_method.value, 'status': 'completed'}
+            receipt_row = await conn.fetchrow('INSERT INTO bar_receipt_counter (user_id, next_number) VALUES ($1, 1) ON CONFLICT (user_id) DO UPDATE SET next_number = bar_receipt_counter.next_number + 1 RETURNING next_number', actor.user_id)
+            receipt_number = receipt_row['next_number']
+            await conn.execute('INSERT INTO bar_receipts (id, user_id, sale_id, receipt_number, is_copy, printed_by) VALUES ($1,$2,$3,$4,$5,$6)', str(uuid4()), actor.user_id, sale_id, receipt_number, False, actor.user_id)
+            response = {'id': sale_id, 'receipt_number': receipt_number, 'total': total, 'payment_method': payload.payment_method.value, 'status': 'completed'}
             await conn.execute('INSERT INTO bar_idempotency_key (user_id, idempotency_key, request_hash, response_json) VALUES ($1,$2,$3,$4::jsonb)', actor.user_id, payload.idempotency_key, request_hash, json.dumps(response))
             return response
+
+
+@router.post('/sales/{sale_id}/void')
+async def void_sale(sale_id: str, payload: TabVoid, actor: RequestActor = Depends(get_actor)):
+    authorized(actor, 'sales.void')
+    async with connection() as conn:
+        async with conn.transaction():
+            row = await conn.fetchrow("UPDATE bar_sale SET voided=true, void_reason=$1, voided_by=$2, voided_at=now() WHERE id=$3 AND user_id=$4 AND voided=false RETURNING id, voided, void_reason, voided_by, voided_at", payload.reason, actor.user_id, sale_id, actor.user_id)
+            if not row:
+                raise HTTPException(status_code=404, detail='Sale was not found or already voided.')
+            await write_audit(conn, actor, 'void', 'sale', sale_id, payload.reason)
+    return dict(row)
 
 
 @router.post('/tabs', status_code=201)

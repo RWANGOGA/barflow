@@ -1,4 +1,5 @@
 from enum import Enum
+from typing import Literal
 from pydantic import BaseModel, Field
 
 class Role(str, Enum):
@@ -15,6 +16,7 @@ class PaymentMethod(str, Enum):
 class SaleItem(BaseModel):
     product_id: str = Field(min_length=1)
     quantity: int = Field(gt=0)
+    note: str | None = Field(default=None, max_length=200)
 
 class SaleCreate(BaseModel):
     payment_method: PaymentMethod
@@ -57,3 +59,18 @@ class StockAdjustmentCreate(BaseModel):
 class Page(BaseModel):
     items: list[dict]
     next_cursor: str | None = None
+
+
+class ReceiptCreate(BaseModel):
+    sale_id: str = Field(min_length=1)
+    is_copy: bool = False
+
+
+class ReceiptOut(BaseModel):
+    id: str
+    user_id: str
+    sale_id: str
+    receipt_number: int
+    is_copy: bool
+    printed_at: str
+    printed_by: str | None = None

@@ -4,6 +4,7 @@ from .schemas import Role
 
 PERMISSIONS: dict[str, set[Role]] = {
     'sales.create': {Role.admin, Role.manager, Role.cashier},
+    'sales.void': {Role.admin, Role.manager},
     'tabs.manage': {Role.admin, Role.manager, Role.cashier},
     'tabs.void': {Role.admin, Role.manager},
     'tabs.reopen': {Role.admin},
