@@ -19,5 +19,9 @@ export const backendApi = {
   me: () => backendRequest<{ user_id: string; role: BackendRole }>('/auth/me'),
   inventory: (cursor?: string) => backendRequest<{ items: unknown[]; next_cursor: string | null }>(`/inventory${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ''}`),
   reports: () => backendRequest<{ orders: number; total: number; by_payment: unknown[] }>('/reports/summary'),
+  inventoryCounts: () => backendRequest<{ items: unknown[] }>('/inventory/counts'),
+  inventoryAdjustments: () => backendRequest<{ items: unknown[] }>('/inventory/adjustments'),
+  inventoryMovements: (productId?: string) => backendRequest<{ items: unknown[] }>(`/inventory/movements${productId ? `?product_id=${encodeURIComponent(productId)}` : ''}`),
+  inventoryVariance: () => backendRequest<{ items: unknown[]; total_variance: number }>('/inventory/variance'),
   audit: () => backendRequest<{ items: unknown[] }>('/audit'),
 }

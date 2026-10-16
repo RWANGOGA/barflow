@@ -231,6 +231,22 @@ async def list_inventory_counts(actor: RequestActor = Depends(get_actor), limit:
     return {'items': [dict(row) for row in rows]}
 
 
+@router.get('/inventory/movements')
+async def list_inventory_movements(actor: RequestActor = Depends(get_actor), product_id: str | None = None, limit: int = Query(default=100, ge=1, le=200)):
+    authorized(actor, 'inventory.manage')
+    async with connection() as conn:
+        rows = await conn.fetch('SELECT id,product_id,quantity,movement_type,reference,created_at FROM bar_stock_movement WHERE user_id=$1 AND ($2::text IS NULL OR product_id=$2) ORDER BY created_at DESC LIMIT $3', actor.user_id, product_id, limit)
+    return {'items': [dict(row) for row in rows]}
+
+
+@router.get('/inventory/variance')
+async def inventory_variance_report(actor: RequestActor = Depends(get_actor), limit: int = Query(default=100, ge=1, le=200)):
+    authorized(actor, 'reports.read')
+    async with connection() as conn:
+        rows = await conn.fetch('SELECT c.id,c.product_id,p.name,c.system_quantity,c.counted_quantity,c.variance,c.counted_by,c.notes,c.created_at FROM bar_inventory_count c JOIN bar_product p ON p.id=c.product_id AND p.user_id=c.user_id WHERE c.user_id=$1 ORDER BY c.created_at DESC LIMIT $2', actor.user_id, limit)
+    return {'items': [dict(row) for row in rows], 'total_variance': sum(row['variance'] for row in rows)}
+
+
 @router.post('/day-close', status_code=201)
 async def close_day(actor: RequestActor = Depends(get_actor)):
     authorized(actor, 'day.close')

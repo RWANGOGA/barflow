@@ -90,3 +90,13 @@ def test_adjustment_requires_nonzero_quantity():
 def test_adjustment_requires_authentication():
     response = TestClient(create_app()).post('/v1/inventory/adjustments', json={'product_id': 'p1', 'quantity': -1, 'adjustment_type': 'wastage', 'reason': 'Spillage'})
     assert response.status_code == 401
+
+
+def test_inventory_movements_require_authentication():
+    response = TestClient(create_app()).get('/v1/inventory/movements')
+    assert response.status_code == 401
+
+
+def test_inventory_variance_requires_authentication():
+    response = TestClient(create_app()).get('/v1/inventory/variance')
+    assert response.status_code == 401
