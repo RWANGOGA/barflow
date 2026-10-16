@@ -456,7 +456,7 @@ function OverviewView({
        <div className="rounded-2xl bg-white p-5 shadow-sm border border-[#e2e7ee]"></div>
           <p className="text-xs font-bold uppercase tracking-wide text-[#8a96a5]">Products</p>
           <p className="mt-2 text-2xl font-bold">{inventoryCount}</p>
-        </card>
+        </div>
         <div className="rounded-2xl bg-white p-5 shadow-sm border border-[#e2e7ee]">
           <p className="text-xs font-bold uppercase tracking-wide text-[#8a96a5]">Low stock</p>
           <p className="mt-2 text-2xl font-bold text-amber-600">{low}</p>
