@@ -6,24 +6,18 @@ import { backendApi, type PaymentMethod } from '@/lib/backend-api'
 import {
   AlertTriangle,
   BarChart3,
-  Bell,
-  Check,
   ClipboardCheck,
   ClipboardList,
   CreditCard,
   FileText,
   LayoutDashboard,
-  Menu,
   Package,
   Plus,
   Search,
   Settings,
-  ShieldCheck,
   Tags,
-  UserRound,
   UsersRound,
   Wine,
-  X,
 } from 'lucide-react'
 
 // ─── Types ────────────────────────────────────────────────
@@ -347,6 +341,7 @@ export default function Page() {
     return shell(
       <SaleView
         filtered={filtered}
+        inventory={inventory}
         category={category}
         setCategory={setCategory}
         query={query}
@@ -364,7 +359,7 @@ export default function Page() {
   }
 
   if (page === 'Open tabs') {
-    return shell(<TabsView toast={toast} inventory={inventory} />)
+    return shell(<TabsView toast={toast} />)
   }
 
   if (page === 'Stock & deliveries') {
@@ -453,7 +448,7 @@ function OverviewView({
       </header>
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-       <div className="rounded-2xl bg-white p-5 shadow-sm border border-[#e2e7ee]"></div>
+        <div className="rounded-2xl bg-white p-5 shadow-sm border border-[#e2e7ee]">
           <p className="text-xs font-bold uppercase tracking-wide text-[#8a96a5]">Products</p>
           <p className="mt-2 text-2xl font-bold">{inventoryCount}</p>
         </div>
@@ -500,6 +495,7 @@ function OverviewView({
 
 function SaleView({
   filtered,
+  inventory,
   category,
   setCategory,
   query,
@@ -514,6 +510,7 @@ function SaleView({
   loading,
 }: {
   filtered: Product[]
+  inventory: Product[]
   category: string
   setCategory: (c: string) => void
   query: string
@@ -527,7 +524,8 @@ function SaleView({
   pay: () => void
   loading: boolean
 }) {
-  const categories = ['All', ...Array.from(new Set(filtered.map((p) => p.category)))]
+  // derive categories from the full inventory so you can switch back after filtering
+  const categories = ['All', ...Array.from(new Set(inventory.map((p) => p.category)))]
 
   return (
     <section className="grid gap-6 lg:grid-cols-[1fr_340px]">
@@ -635,7 +633,7 @@ function SaleView({
   )
 }
 
-function TabsView({ toast, inventory }: { toast: (s: string) => void; inventory: Product[] }) {
+function TabsView({ toast }: { toast: (s: string) => void }) {
   const [tabs, setTabs] = useState<TabRow[]>([])
   const [tableLabel, setTableLabel] = useState('')
   const [ownerName, setOwnerName] = useState('')
@@ -648,6 +646,7 @@ function TabsView({ toast, inventory }: { toast: (s: string) => void; inventory:
 
   useEffect(() => {
     load()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   const create = async () => {
@@ -846,7 +845,8 @@ function ReportsView({ toast }: { toast: (s: string) => void }) {
       .reports()
       .then(setData)
       .catch((err) => toast(err instanceof Error ? err.message : 'Failed to load reports'))
-  }, [toast])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   return (
     <section className="space-y-4">
