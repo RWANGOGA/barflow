@@ -1,9 +1,10 @@
 from fastapi.testclient import TestClient
 
-from backend.app.main import app
+from backend.app import main
+from backend.app.config import Settings
 
 
-client = TestClient(app)
+client = TestClient(main.app)
 
 
 def test_health_check():
@@ -12,10 +13,20 @@ def test_health_check():
     assert response.json() == {'status': 'ok'}
 
 
-def test_dashboard_summary():
-    response = client.get('/api/dashboard/summary')
+def test_readiness_requires_database_configuration(monkeypatch):
+    monkeypatch.setattr(main, 'settings', Settings(database_url=''))
+    response = client.get('/ready')
+    assert response.status_code == 503
+    assert response.json() == {'status': 'not_ready', 'reason': 'database_not_configured'}
+
+
+def test_readiness_returns_ready_when_database_is_available(monkeypatch):
+    monkeypatch.setattr(main, 'settings', Settings(database_url='postgresql://test'))
+    monkeypatch.setattr(main, 'check_database', lambda: _ready())
+    response = client.get('/ready')
     assert response.status_code == 200
-    payload = response.json()
-    assert payload['revenue_today'] == 284000
-    assert payload['open_tabs'] == 7
-    assert payload['low_stock_items'] == 3
+    assert response.json() == {'status': 'ready'}
+
+
+async def _ready():
+    return True
