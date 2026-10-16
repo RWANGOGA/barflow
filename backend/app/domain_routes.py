@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from .auth import RequestActor, get_actor
 from .authorization import Actor, require_permission
 from .db import connection
-from .schemas import SaleCreate, TabCreate, TabItemCreate
+from .schemas import SaleCreate, TabCreate, TabItemCreate, TabItemUpdate
 
 router = APIRouter(prefix='/v1', tags=['domain'])
 
@@ -77,6 +77,38 @@ async def add_tab_item(tab_id: str, payload: TabItemCreate, actor: RequestActor 
             row = await conn.fetchrow('INSERT INTO bar_tab_item (id,tab_id,user_id,product_id,quantity,unit_price,line_total) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id, product_id, quantity, unit_price, line_total', str(uuid4()), tab_id, actor.user_id, payload.product_id, payload.quantity, product['price'], product['price'] * payload.quantity)
             await conn.execute('UPDATE bar_tab SET total = total + $1 WHERE id=$2 AND user_id=$3', product['price'] * payload.quantity, tab_id, actor.user_id)
     return dict(row)
+
+
+@router.patch('/tabs/{tab_id}/items/{item_id}')
+async def update_tab_item(tab_id: str, item_id: str, payload: TabItemUpdate, actor: RequestActor = Depends(get_actor)):
+    authorized(actor, 'tabs.manage')
+    async with connection() as conn:
+        async with conn.transaction():
+            tab = await conn.fetchrow("SELECT id FROM bar_tab WHERE id=$1 AND user_id=$2 AND status='open' FOR UPDATE", tab_id, actor.user_id)
+            if not tab:
+                raise HTTPException(status_code=404, detail='Open tab was not found.')
+            item = await conn.fetchrow('SELECT id, unit_price, quantity FROM bar_tab_item WHERE id=$1 AND tab_id=$2 AND user_id=$3 FOR UPDATE', item_id, tab_id, actor.user_id)
+            if not item:
+                raise HTTPException(status_code=404, detail='Tab item was not found.')
+            delta = (payload.quantity - item['quantity']) * item['unit_price']
+            row = await conn.fetchrow('UPDATE bar_tab_item SET quantity=$1, line_total=$2 WHERE id=$3 RETURNING id, product_id, quantity, unit_price, line_total', payload.quantity, payload.quantity * item['unit_price'], item_id)
+            await conn.execute('UPDATE bar_tab SET total = total + $1 WHERE id=$2 AND user_id=$3', delta, tab_id, actor.user_id)
+    return dict(row)
+
+
+@router.delete('/tabs/{tab_id}/items/{item_id}', status_code=204)
+async def remove_tab_item(tab_id: str, item_id: str, actor: RequestActor = Depends(get_actor)):
+    authorized(actor, 'tabs.manage')
+    async with connection() as conn:
+        async with conn.transaction():
+            tab = await conn.fetchrow("SELECT id FROM bar_tab WHERE id=$1 AND user_id=$2 AND status='open' FOR UPDATE", tab_id, actor.user_id)
+            if not tab:
+                raise HTTPException(status_code=404, detail='Open tab was not found.')
+            item = await conn.fetchrow('SELECT quantity, unit_price FROM bar_tab_item WHERE id=$1 AND tab_id=$2 AND user_id=$3 FOR UPDATE', item_id, tab_id, actor.user_id)
+            if not item:
+                raise HTTPException(status_code=404, detail='Tab item was not found.')
+            await conn.execute('DELETE FROM bar_tab_item WHERE id=$1 AND tab_id=$2 AND user_id=$3', item_id, tab_id, actor.user_id)
+            await conn.execute('UPDATE bar_tab SET total = total - $1 WHERE id=$2 AND user_id=$3', item['quantity'] * item['unit_price'], tab_id, actor.user_id)
 
 
 @router.get('/tabs')
