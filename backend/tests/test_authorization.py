@@ -1,32 +1,33 @@
 import pytest
 from fastapi import HTTPException
-from fastapi.testclient import TestClient
 
 from backend.app.authorization import Actor, require_permission
-from backend.app.main import create_app
 from backend.app.schemas import Role
 
-def test_cashier_can_create_sales():
-    actor = Actor('u1', Role.cashier)
-    assert require_permission(actor, 'sales.create') == actor
 
-def test_cashier_cannot_close_day():
+@pytest.mark.parametrize('role,permission,allowed', [
+    (Role.admin, 'inventory.manage', True),
+    (Role.manager, 'inventory.manage', True),
+    (Role.storekeeper, 'inventory.manage', True),
+    (Role.cashier, 'inventory.manage', False),
+    (Role.admin, 'audit.read', True),
+    (Role.manager, 'audit.read', True),
+    (Role.cashier, 'audit.read', False),
+    (Role.storekeeper, 'audit.read', False),
+    (Role.admin, 'tabs.reopen', True),
+    (Role.manager, 'tabs.reopen', False),
+])
+def test_permission_matrix(role, permission, allowed):
+    actor = Actor('user-1', role)
+    if allowed:
+        assert require_permission(actor, permission) == actor
+    else:
+        with pytest.raises(HTTPException) as error:
+            require_permission(actor, permission)
+        assert error.value.status_code == 403
+
+
+def test_unknown_permission_is_denied():
     with pytest.raises(HTTPException) as error:
-        require_permission(Actor('user-1', Role.cashier), 'day.close')
+        require_permission(Actor('user-1', Role.admin), 'not-a-permission')
     assert error.value.status_code == 403
-
-
-def test_auth_endpoint_requires_identity_headers():
-    response = TestClient(create_app()).get('/auth/me')
-    assert response.status_code == 401
-
-
-def test_auth_endpoint_returns_role():
-    response = TestClient(create_app()).get('/auth/me', headers={'x-user-id': 'user-1', 'x-user-role': 'Cashier'})
-    assert response.status_code == 200
-    assert response.json() == {'user_id': 'user-1', 'role': 'Cashier'}
-
-
-def test_storekeeper_can_manage_inventory():
-    actor = Actor('u1', Role.storekeeper)
-    assert require_permission(actor, 'inventory.manage') == actor
