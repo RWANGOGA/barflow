@@ -6,6 +6,7 @@ from uuid import uuid4
 
 from fastapi import Depends, FastAPI, Request
 from fastapi.exceptions import RequestValidationError
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from .config import Settings, settings as default_settings
@@ -19,6 +20,13 @@ from .db import check_database
 DatabaseCheck = Callable[[], Awaitable[bool]]
 logger = logging.getLogger('barflow.api')
 
+# Origins that are allowed to send cookies to this API
+ALLOWED_ORIGINS = [
+    "http://localhost:3000",
+    "https://barflow-one.vercel.app",
+    # Add any other frontend URLs you use (v0 previews, custom domains, etc.)
+]
+
 
 def create_app(*, app_settings: Settings = default_settings, database_check: DatabaseCheck = check_database) -> FastAPI:
     app = FastAPI(
@@ -26,6 +34,16 @@ def create_app(*, app_settings: Settings = default_settings, database_check: Dat
         version="0.1.0",
         description="Backend service for the Barflow bar-management system.",
     )
+
+    # CORS – required so the browser can send the Better Auth session cookie
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=ALLOWED_ORIGINS,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+
     app.include_router(domain_router)
     app.include_router(operations_router)
     app.add_exception_handler(ApiError, lambda request, error: api_error_response(error))

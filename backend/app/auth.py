@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
-from fastapi import Depends, Header, HTTPException
+from fastapi import Depends, Header, HTTPException, Request
 
 from .db import connection
 from .schemas import Role
@@ -16,6 +16,9 @@ class RequestActor:
 
 LOCKOUT_MAX_ATTEMPTS = 5
 LOCKOUT_WINDOW_MINUTES = 15
+
+# Better Auth default cookie name
+SESSION_COOKIE_NAME = "better-auth.session_token"
 
 
 async def record_login_attempt(user_id: str, success: bool, ip_address: str | None = None) -> None:
@@ -34,17 +37,67 @@ async def check_lockout(user_id: str) -> None:
             user_id, window_start,
         )
     if row and row['fails'] >= LOCKOUT_MAX_ATTEMPTS:
-        raise HTTPException(status_code=423, detail=f'Account locked after {LOCKOUT_MAX_ATTEMPTS} failed attempts. Try again later.')
+        raise HTTPException(
+            status_code=423,
+            detail=f'Account locked after {LOCKOUT_MAX_ATTEMPTS} failed attempts. Try again later.',
+        )
+
+
+async def _actor_from_session_token(token: str) -> RequestActor | None:
+    """Verify a Better Auth session token against the database."""
+    async with connection() as conn:
+        row = await conn.fetchrow(
+            '''
+            SELECT s."userId" AS user_id, s."expiresAt" AS expires_at, u.role
+            FROM session s
+            JOIN "user" u ON u.id = s."userId"
+            WHERE s.token = $1
+            ''',
+            token,
+        )
+        if not row:
+            return None
+
+        expires_at = row['expires_at']
+        if expires_at.tzinfo is None:
+            expires_at = expires_at.replace(tzinfo=timezone.utc)
+
+        if expires_at < datetime.now(timezone.utc):
+            return None
+
+        role_value = row['role'] or 'Manager'
+        try:
+            role = Role(role_value)
+        except ValueError:
+            role = Role.manager
+
+        return RequestActor(user_id=row['user_id'], role=role)
 
 
 async def get_actor(
+    request: Request,
     x_user_id: str | None = Header(default=None),
     x_user_role: Role | None = Header(default=None),
 ) -> RequestActor:
-    """Temporary boundary for the auth adapter; replace headers with verified Better Auth claims."""
-    if not x_user_id or not x_user_role:
-        raise HTTPException(status_code=401, detail="Authentication required.")
-    return RequestActor(user_id=x_user_id, role=x_user_role)
+    """
+    Resolve the current actor.
+
+    Priority:
+    1. Better Auth session cookie (real verification)
+    2. Temporary x-user-id / x-user-role headers (kept for migration safety)
+    """
+    # 1. Try real Better Auth session cookie
+    token = request.cookies.get(SESSION_COOKIE_NAME)
+    if token:
+        actor = await _actor_from_session_token(token)
+        if actor:
+            return actor
+
+    # 2. Temporary header fallback (to be removed later)
+    if x_user_id and x_user_role:
+        return RequestActor(user_id=x_user_id, role=x_user_role)
+
+    raise HTTPException(status_code=401, detail="Authentication required.")
 
 
 async def pin_sign_in(user_id: str, pin: str, ip_address: str | None = None) -> RequestActor:
