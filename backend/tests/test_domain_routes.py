@@ -80,3 +80,13 @@ def test_inventory_count_requires_authentication():
 def test_inventory_count_rejects_negative_quantity():
     response = TestClient(create_app()).post('/v1/inventory/counts', headers=headers('Storekeeper'), json={'product_id': 'p1', 'counted_quantity': -1})
     assert response.status_code == 422
+
+
+def test_adjustment_requires_nonzero_quantity():
+    response = TestClient(create_app()).post('/v1/inventory/adjustments', headers=headers('Storekeeper'), json={'product_id': 'p1', 'quantity': 0, 'adjustment_type': 'wastage', 'reason': 'Spillage'})
+    assert response.status_code == 422
+
+
+def test_adjustment_requires_authentication():
+    response = TestClient(create_app()).post('/v1/inventory/adjustments', json={'product_id': 'p1', 'quantity': -1, 'adjustment_type': 'wastage', 'reason': 'Spillage'})
+    assert response.status_code == 401

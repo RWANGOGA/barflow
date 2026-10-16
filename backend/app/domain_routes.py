@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from .auth import RequestActor, get_actor
 from .authorization import Actor, require_permission
 from .db import connection
-from .schemas import InventoryCountCreate, SaleCreate, TabCreate, TabItemCreate, TabItemUpdate, TabSettle, TabVoid, TabReopen
+from .schemas import InventoryCountCreate, SaleCreate, StockAdjustmentCreate, TabCreate, TabItemCreate, TabItemUpdate, TabSettle, TabVoid, TabReopen
 
 router = APIRouter(prefix='/v1', tags=['domain'])
 
@@ -193,6 +193,34 @@ async def create_inventory_count(payload: InventoryCountCreate, actor: RequestAc
             variance = payload.counted_quantity - product['stock']
             row = await conn.fetchrow('INSERT INTO bar_inventory_count (id,user_id,product_id,system_quantity,counted_quantity,variance,counted_by,notes) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id,product_id,system_quantity,counted_quantity,variance,counted_by,notes,created_at', str(uuid4()), actor.user_id, payload.product_id, product['stock'], payload.counted_quantity, variance, actor.user_id, payload.notes)
     return dict(row)
+
+
+@router.post('/inventory/adjustments', status_code=201)
+async def create_stock_adjustment(payload: StockAdjustmentCreate, actor: RequestActor = Depends(get_actor)):
+    authorized(actor, 'inventory.manage')
+    if payload.quantity == 0:
+        raise HTTPException(status_code=422, detail='Adjustment quantity cannot be zero.')
+    async with connection() as conn:
+        async with conn.transaction():
+            product = await conn.fetchrow('SELECT id, stock FROM bar_product WHERE id=$1 AND user_id=$2 FOR UPDATE', payload.product_id, actor.user_id)
+            if not product:
+                raise HTTPException(status_code=404, detail='Product was not found.')
+            new_stock = product['stock'] + payload.quantity
+            if new_stock < 0:
+                raise HTTPException(status_code=409, detail='Adjustment would make stock negative.')
+            adjustment_id = str(uuid4())
+            row = await conn.fetchrow('INSERT INTO bar_stock_adjustment (id,user_id,product_id,quantity,adjustment_type,reason,created_by) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id,product_id,quantity,adjustment_type,reason,created_by,created_at', adjustment_id, actor.user_id, payload.product_id, payload.quantity, payload.adjustment_type, payload.reason, actor.user_id)
+            await conn.execute('UPDATE bar_product SET stock=$1, updated_at=now() WHERE id=$2 AND user_id=$3', new_stock, payload.product_id, actor.user_id)
+            await conn.execute('INSERT INTO bar_stock_movement (id,user_id,product_id,quantity,movement_type,reference) VALUES ($1,$2,$3,$4,$5,$6)', str(uuid4()), actor.user_id, payload.product_id, payload.quantity, payload.adjustment_type, adjustment_id)
+    return dict(row)
+
+
+@router.get('/inventory/adjustments')
+async def list_stock_adjustments(actor: RequestActor = Depends(get_actor), limit: int = Query(default=50, ge=1, le=100)):
+    authorized(actor, 'inventory.manage')
+    async with connection() as conn:
+        rows = await conn.fetch('SELECT id,product_id,quantity,adjustment_type,reason,created_by,created_at FROM bar_stock_adjustment WHERE user_id=$1 ORDER BY created_at DESC LIMIT $2', actor.user_id, limit)
+    return {'items': [dict(row) for row in rows]}
 
 
 @router.get('/inventory/counts')

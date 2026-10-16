@@ -48,6 +48,12 @@ class InventoryCountCreate(BaseModel):
     counted_quantity: int = Field(ge=0)
     notes: str | None = Field(default=None, max_length=500)
 
+class StockAdjustmentCreate(BaseModel):
+    product_id: str = Field(min_length=1)
+    quantity: int
+    adjustment_type: Literal['wastage', 'adjustment']
+    reason: str = Field(min_length=3, max_length=500)
+
 class Page(BaseModel):
     items: list[dict]
     next_cursor: str | None = None
