@@ -55,8 +55,20 @@ async def create_tab(payload: TabCreate, actor: RequestActor = Depends(get_actor
     authorized(actor, 'tabs.manage')
     tab_id = str(uuid4())
     async with connection() as conn:
-        row = await conn.fetchrow('INSERT INTO bar_tab (id,user_id,table_label,owner_name) VALUES ($1,$2,$3,$4) RETURNING id, table_label, owner_name, total, status, opened_at', tab_id, actor.user_id, payload.table_label, payload.owner_name)
+        async with conn.transaction():
+            existing = await conn.fetchrow("SELECT id FROM bar_tab WHERE user_id=$1 AND table_label=$2 AND status='open' FOR UPDATE", actor.user_id, payload.table_label)
+            if existing:
+                raise HTTPException(status_code=409, detail='An open tab already exists for this table.')
+            row = await conn.fetchrow('INSERT INTO bar_tab (id,user_id,table_label,owner_name) VALUES ($1,$2,$3,$4) RETURNING id, table_label, owner_name, total, status, opened_at', tab_id, actor.user_id, payload.table_label, payload.owner_name)
     return dict(row)
+
+
+@router.get('/tabs')
+async def list_tabs(actor: RequestActor = Depends(get_actor), status: str = Query(default='open', pattern='^(open|settled|voided|all)$'), limit: int = Query(default=50, ge=1, le=100)):
+    authorized(actor, 'tabs.manage')
+    async with connection() as conn:
+        rows = await conn.fetch("SELECT id, table_label, owner_name, total, status, opened_at, settled_at FROM bar_tab WHERE user_id=$1 AND ($2='all' OR status=$2) ORDER BY opened_at DESC LIMIT $3", actor.user_id, status, limit)
+    return {'items': [dict(row) for row in rows]}
 
 
 @router.get('/inventory')

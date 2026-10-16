@@ -20,3 +20,13 @@ def test_sales_validates_idempotency_key_before_database():
 def test_cashier_cannot_close_day():
     response = TestClient(create_app()).post('/v1/day-close', headers=headers())
     assert response.status_code == 403
+
+
+def test_tabs_require_authentication():
+    response = TestClient(create_app()).get('/v1/tabs')
+    assert response.status_code == 401
+
+
+def test_tabs_validate_status_filter():
+    response = TestClient(create_app()).get('/v1/tabs?status=invalid', headers=headers())
+    assert response.status_code == 422
