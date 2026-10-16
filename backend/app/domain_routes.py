@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from .auth import RequestActor, get_actor
 from .authorization import Actor, require_permission
 from .db import connection
-from .schemas import DiscountCreate, DiscountOut, InventoryCountCreate, PinSet, PinVerify, ReceiptCreate, ReceiptOut, ReceiptReprintCreate, Role, SaleCreate, SettingCreate, SettingOut, StockAdjustmentCreate, TabCreate, TabItemCreate, TabItemUpdate, TabSettle, TabVoid, TabReopen
+from .schemas import DeliveryCreate, DeliveryOut, DiscountCreate, DiscountOut, InventoryCountCreate, MenuStockLinkCreate, MenuStockLinkOut, PinSet, PinVerify, ReceiptCreate, ReceiptOut, ReceiptReprintCreate, Role, SaleCreate, SettingCreate, SettingOut, StockAdjustmentCreate, TabCreate, TabItemCreate, TabItemUpdate, TabSettle, TabVoid, TabReopen, TransferCreate, TransferOut
 
 router = APIRouter(prefix='/v1', tags=['domain'])
 
@@ -41,7 +41,9 @@ async def create_sale(payload: SaleCreate, actor: RequestActor = Depends(get_act
                 if not product:
                     raise HTTPException(status_code=404, detail=f'Product {item.product_id} was not found.')
                 if product['stock'] < item.quantity:
-                    raise HTTPException(status_code=409, detail=f'Insufficient stock for product {item.product_id}.')
+                    allow_neg = await conn.fetchval("SELECT value FROM bar_settings WHERE user_id=$1 AND key='allow_negative_stock'", actor.user_id)
+                    if allow_neg != 'true':
+                        raise HTTPException(status_code=409, detail=f'Insufficient stock for product {item.product_id}.')
                 total += product['price'] * item.quantity
                 products.append((item, product))
             change_due = 0
@@ -83,6 +85,10 @@ async def void_sale(sale_id: str, payload: TabVoid, actor: RequestActor = Depend
             row = await conn.fetchrow("UPDATE bar_sale SET voided=true, void_reason=$1, voided_by=$2, voided_at=now() WHERE id=$3 AND user_id=$4 AND voided=false RETURNING id, voided, void_reason, voided_by, voided_at", payload.reason, actor.user_id, sale_id, actor.user_id)
             if not row:
                 raise HTTPException(status_code=404, detail='Sale was not found or already voided.')
+            items = await conn.fetch('SELECT id, product_id, quantity FROM bar_sale_item WHERE sale_id=$1 AND user_id=$2', sale_id, actor.user_id)
+            for item in items:
+                await conn.execute('UPDATE bar_product SET stock = stock + $1, updated_at = now() WHERE user_id=$2 AND id = $3', item['quantity'], actor.user_id, item['product_id'])
+                await conn.execute('INSERT INTO bar_stock_movement (id,user_id,product_id,quantity,movement_type,reference) VALUES ($1,$2,$3,$4,$5,$6)', str(uuid4()), actor.user_id, item['product_id'], item['quantity'], 'void_return', sale_id)
             await write_audit(conn, actor, 'void', 'sale', sale_id, payload.reason)
     return dict(row)
 
@@ -158,6 +164,58 @@ async def upsert_setting(payload: SettingCreate, actor: RequestActor = Depends(g
     async with connection() as conn:
         row = await conn.fetchrow('INSERT INTO bar_settings (user_id, key, value) VALUES ($1,$2,$3) ON CONFLICT (user_id, key) DO UPDATE SET value=$3, updated_at=now() RETURNING key, value', actor.user_id, payload.key, payload.value)
     return dict(row)
+
+
+@router.post('/menu-stock-links', status_code=201)
+async def create_menu_stock_link(payload: MenuStockLinkCreate, actor: RequestActor = Depends(get_actor)):
+    authorized(actor, 'menu.manage')
+    async with connection() as conn:
+        row = await conn.fetchrow('INSERT INTO bar_menu_stock_link (id,user_id,menu_item_id,stock_item_id,quantity_per_unit) VALUES ($1,$2,$3,$4,$5) RETURNING id,menu_item_id,stock_item_id,quantity_per_unit,created_at', str(uuid4()), actor.user_id, payload.menu_item_id, payload.stock_item_id, payload.quantity_per_unit)
+    return dict(row)
+
+
+@router.get('/menu-stock-links')
+async def list_menu_stock_links(actor: RequestActor = Depends(get_actor), menu_item_id: str | None = None):
+    authorized(actor, 'menu.manage')
+    async with connection() as conn:
+        rows = await conn.fetch('SELECT id,menu_item_id,stock_item_id,quantity_per_unit,created_at FROM bar_menu_stock_link WHERE user_id=$1 AND ($2::text IS NULL OR menu_item_id=$2) ORDER BY created_at DESC', actor.user_id, menu_item_id)
+    return {'items': [dict(row) for row in rows]}
+
+
+@router.post('/stock/deliveries', status_code=201)
+async def create_stock_delivery(payload: DeliveryCreate, actor: RequestActor = Depends(get_actor)):
+    authorized(actor, 'inventory.manage')
+    async with connection() as conn:
+        async with conn.transaction():
+            row = await conn.fetchrow('INSERT INTO bar_stock_delivery (id,user_id,supplier,product_id,quantity,cost_price,delivery_date) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id,supplier,product_id,quantity,cost_price,delivery_date,created_at', str(uuid4()), actor.user_id, payload.supplier, payload.product_id, payload.quantity, payload.cost_price, payload.delivery_date)
+            await conn.execute('UPDATE bar_product SET stock = stock + $1, cost = $2, updated_at = now() WHERE user_id=$3 AND id = $4', payload.quantity, payload.cost_price, actor.user_id, payload.product_id)
+            await conn.execute('INSERT INTO bar_stock_movement (id,user_id,product_id,quantity,movement_type,reference) VALUES ($1,$2,$3,$4,$5,$6)', str(uuid4()), actor.user_id, payload.product_id, payload.quantity, 'delivery', row['id'])
+            await write_audit(conn, actor, 'delivery', 'stock_delivery', row['id'], metadata={'supplier': payload.supplier, 'quantity': payload.quantity, 'cost_price': payload.cost_price})
+    return dict(row)
+
+
+@router.get('/stock/deliveries')
+async def list_stock_deliveries(actor: RequestActor = Depends(get_actor), limit: int = Query(default=50, ge=1, le=100)):
+    authorized(actor, 'inventory.manage')
+    async with connection() as conn:
+        rows = await conn.fetch('SELECT id,supplier,product_id,quantity,cost_price,delivery_date,created_at FROM bar_stock_delivery WHERE user_id=$1 ORDER BY delivery_date DESC LIMIT $2', actor.user_id, limit)
+    return {'items': [dict(row) for row in rows]}
+
+
+@router.post('/stock/transfers', status_code=201)
+async def create_stock_transfer(payload: TransferCreate, actor: RequestActor = Depends(get_actor)):
+    authorized(actor, 'inventory.manage')
+    async with connection() as conn:
+        row = await conn.fetchrow('INSERT INTO bar_stock_transfer (id,user_id,product_id,quantity,from_location,to_location,reason) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id,product_id,quantity,from_location,to_location,reason,created_at', str(uuid4()), actor.user_id, payload.product_id, payload.quantity, payload.from_location, payload.to_location, payload.reason)
+    return dict(row)
+
+
+@router.get('/stock/transfers')
+async def list_stock_transfers(actor: RequestActor = Depends(get_actor), limit: int = Query(default=50, ge=1, le=100)):
+    authorized(actor, 'inventory.manage')
+    async with connection() as conn:
+        rows = await conn.fetch('SELECT id,product_id,quantity,from_location,to_location,reason,created_at FROM bar_stock_transfer WHERE user_id=$1 ORDER BY created_at DESC LIMIT $2', actor.user_id, limit)
+    return {'items': [dict(row) for row in rows]}
 
 
 @router.post('/tabs', status_code=201)

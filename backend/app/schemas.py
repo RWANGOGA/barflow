@@ -123,3 +123,56 @@ class DiscountOut(BaseModel):
     approved_by: str | None = None
     approved_at: str | None = None
     created_at: str
+
+
+class MenuStockLinkCreate(BaseModel):
+    menu_item_id: str = Field(min_length=1)
+    stock_item_id: str = Field(min_length=1)
+    quantity_per_unit: int = Field(gt=0)
+
+
+class MenuStockLinkOut(BaseModel):
+    id: str
+    user_id: str
+    menu_item_id: str
+    stock_item_id: str
+    quantity_per_unit: int
+    created_at: str
+
+
+class DeliveryCreate(BaseModel):
+    supplier: str = Field(min_length=1, max_length=200)
+    product_id: str = Field(min_length=1)
+    quantity: int = Field(gt=0)
+    cost_price: int = Field(ge=0)
+    delivery_date: str
+
+
+class DeliveryOut(BaseModel):
+    id: str
+    user_id: str
+    supplier: str
+    product_id: str
+    quantity: int
+    cost_price: int
+    delivery_date: str
+    created_at: str
+
+
+class TransferCreate(BaseModel):
+    product_id: str = Field(min_length=1)
+    quantity: int = Field(gt=0)
+    from_location: str = Field(min_length=1, max_length=100)
+    to_location: str = Field(min_length=1, max_length=100)
+    reason: str | None = Field(default=None, max_length=500)
+
+
+class TransferOut(BaseModel):
+    id: str
+    user_id: str
+    product_id: str
+    quantity: int
+    from_location: str
+    to_location: str
+    reason: str | None = None
+    created_at: str

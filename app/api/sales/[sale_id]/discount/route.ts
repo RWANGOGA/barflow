@@ -13,23 +13,24 @@ async function getUserId() {
 
 export async function POST(
   request: Request,
-  { params }: { params: { sale_id: string } }
+  { params }: { params: Promise<{ sale_id: string }> }
 ) {
   try {
     const userId = await getUserId()
+    const { sale_id } = await params
     const body = await request.json()
     const { amount, reason, pin } = body
     if (!amount || amount <= 0) return NextResponse.json({ error: 'Invalid discount amount' }, { status: 400 })
     if (!reason || reason.length < 3) return NextResponse.json({ error: 'Invalid discount reason' }, { status: 400 })
 
-    const sale = await db.select().from(sales).where(eq(sales.id, params.sale_id)).limit(1)
+    const sale = await db.select().from(sales).where(eq(sales.id, sale_id)).limit(1)
     if (!sale[0] || sale[0].userId !== userId) return NextResponse.json({ error: 'Sale not found' }, { status: 404 })
 
     // PIN verification would be handled by the frontend before calling this
     const discount = await db.insert(discounts).values({
       id: crypto.randomUUID(),
       userId,
-      saleId: params.sale_id,
+      saleId: sale_id,
       amount,
       reason,
       approvedBy: userId,

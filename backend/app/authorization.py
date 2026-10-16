@@ -8,6 +8,7 @@ PERMISSIONS: dict[str, set[Role]] = {
     'receipts.reprint': {Role.admin, Role.manager},
     'settings.read': {Role.admin, Role.manager},
     'settings.write': {Role.admin, Role.manager},
+    'menu.manage': {Role.admin, Role.manager},
     'tabs.manage': {Role.admin, Role.manager, Role.cashier},
     'tabs.void': {Role.admin, Role.manager},
     'tabs.reopen': {Role.admin},
