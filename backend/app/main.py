@@ -9,7 +9,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
 from .config import Settings, settings as default_settings
-from .auth import RequestActor, get_actor
+from .auth import RequestActor, get_actor, pin_sign_in
 from .domain_routes import router as domain_router
 from .operations_routes import router as operations_router
 from .errors import ApiError, api_error_response, validation_error_response
@@ -49,6 +49,11 @@ def create_app(*, app_settings: Settings = default_settings, database_check: Dat
 
     @app.get("/auth/me", tags=["auth"])
     async def current_actor(actor: RequestActor = Depends(get_actor)) -> dict[str, str]:
+        return {"user_id": actor.user_id, "role": actor.role.value}
+
+    @app.post("/auth/pin-sign-in", tags=["auth"])
+    async def pin_sign_in_route(user_id: str, pin: str) -> dict[str, str]:
+        actor = await pin_sign_in(user_id, pin)
         return {"user_id": actor.user_id, "role": actor.role.value}
 
     @app.get("/test-error", tags=["system"], include_in_schema=False)

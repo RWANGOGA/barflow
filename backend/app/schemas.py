@@ -49,6 +49,7 @@ class TabSettle(BaseModel):
 
 class TabVoid(BaseModel):
     reason: str = Field(min_length=3, max_length=500)
+    pin: str | None = Field(default=None, max_length=20)
 
 class TabReopen(BaseModel):
     reason: str = Field(min_length=3, max_length=500)
@@ -96,3 +97,29 @@ class SettingCreate(BaseModel):
 class SettingOut(BaseModel):
     key: str
     value: str
+
+
+class PinVerify(BaseModel):
+    pin: str = Field(min_length=4, max_length=20)
+
+
+class PinSet(BaseModel):
+    pin: str = Field(min_length=4, max_length=20)
+
+
+class DiscountCreate(BaseModel):
+    sale_id: str = Field(min_length=1)
+    amount: int = Field(gt=0)
+    reason: str = Field(min_length=3, max_length=500)
+    pin: str | None = Field(default=None, max_length=20)
+
+
+class DiscountOut(BaseModel):
+    id: str
+    user_id: str
+    sale_id: str | None = None
+    amount: int
+    reason: str
+    approved_by: str | None = None
+    approved_at: str | None = None
+    created_at: str

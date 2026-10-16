@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from .auth import RequestActor, get_actor
 from .authorization import Actor, require_permission
 from .db import connection
-from .schemas import InventoryCountCreate, ReceiptCreate, ReceiptOut, ReceiptReprintCreate, SaleCreate, SettingCreate, SettingOut, StockAdjustmentCreate, TabCreate, TabItemCreate, TabItemUpdate, TabSettle, TabVoid, TabReopen
+from .schemas import DiscountCreate, DiscountOut, InventoryCountCreate, PinSet, PinVerify, ReceiptCreate, ReceiptOut, ReceiptReprintCreate, Role, SaleCreate, SettingCreate, SettingOut, StockAdjustmentCreate, TabCreate, TabItemCreate, TabItemUpdate, TabSettle, TabVoid, TabReopen
 
 router = APIRouter(prefix='/v1', tags=['domain'])
 
@@ -72,11 +72,61 @@ async def void_sale(sale_id: str, payload: TabVoid, actor: RequestActor = Depend
     authorized(actor, 'sales.void')
     async with connection() as conn:
         async with conn.transaction():
+            if actor.role != Role.admin:
+                if not payload.pin:
+                    raise HTTPException(status_code=400, detail='Manager PIN is required to void a sale.')
+                pin_row = await conn.fetchrow('SELECT pin_hash FROM bar_user_pin WHERE user_id=$1', actor.user_id)
+                if not pin_row or not pin_row['pin_hash']:
+                    raise HTTPException(status_code=400, detail='No PIN set for this user.')
+                if hashlib.sha256(payload.pin.encode()).hexdigest() != pin_row['pin_hash']:
+                    raise HTTPException(status_code=403, detail='Invalid PIN.')
             row = await conn.fetchrow("UPDATE bar_sale SET voided=true, void_reason=$1, voided_by=$2, voided_at=now() WHERE id=$3 AND user_id=$4 AND voided=false RETURNING id, voided, void_reason, voided_by, voided_at", payload.reason, actor.user_id, sale_id, actor.user_id)
             if not row:
                 raise HTTPException(status_code=404, detail='Sale was not found or already voided.')
             await write_audit(conn, actor, 'void', 'sale', sale_id, payload.reason)
     return dict(row)
+
+
+@router.post('/auth/verify-pin')
+async def verify_pin(payload: PinVerify, actor: RequestActor = Depends(get_actor)):
+    async with connection() as conn:
+        row = await conn.fetchrow('SELECT pin_hash FROM bar_user_pin WHERE user_id=$1', actor.user_id)
+        if not row or not row['pin_hash']:
+            raise HTTPException(status_code=400, detail='No PIN set for this user.')
+        if hashlib.sha256(payload.pin.encode()).hexdigest() != row['pin_hash']:
+            raise HTTPException(status_code=403, detail='Invalid PIN.')
+    return {'valid': True}
+
+
+@router.post('/auth/set-pin', status_code=201)
+async def set_pin(payload: PinSet, actor: RequestActor = Depends(get_actor)):
+    async with connection() as conn:
+        await conn.execute('INSERT INTO bar_user_pin (user_id, pin_hash) VALUES ($1,$2) ON CONFLICT (user_id) DO UPDATE SET pin_hash=$2, created_at=now()', actor.user_id, hashlib.sha256(payload.pin.encode()).hexdigest())
+    return {'ok': True}
+
+
+@router.post('/sales/{sale_id}/discount', status_code=201)
+async def create_discount(sale_id: str, payload: DiscountCreate, actor: RequestActor = Depends(get_actor)):
+    authorized(actor, 'sales.void')
+    async with connection() as conn:
+        async with conn.transaction():
+            sale = await conn.fetchrow('SELECT id, user_id, total, voided FROM bar_sale WHERE id=$1 AND user_id=$2', sale_id, actor.user_id)
+            if not sale:
+                raise HTTPException(status_code=404, detail='Sale was not found.')
+            if sale['voided']:
+                raise HTTPException(status_code=409, detail='Cannot discount a voided sale.')
+            if actor.role != Role.admin:
+                if not payload.pin:
+                    raise HTTPException(status_code=400, detail='Manager PIN is required to apply a discount.')
+                pin_row = await conn.fetchrow('SELECT pin_hash FROM bar_user_pin WHERE user_id=$1', actor.user_id)
+                if not pin_row or not pin_row['pin_hash']:
+                    raise HTTPException(status_code=400, detail='No PIN set for this user.')
+                if hashlib.sha256(payload.pin.encode()).hexdigest() != pin_row['pin_hash']:
+                    raise HTTPException(status_code=403, detail='Invalid PIN.')
+            discount_id = str(uuid4())
+            await conn.execute('INSERT INTO bar_discount (id, user_id, sale_id, amount, reason, approved_by) VALUES ($1,$2,$3,$4,$5,$6)', discount_id, actor.user_id, sale_id, payload.amount, payload.reason, actor.user_id)
+            await write_audit(conn, actor, 'discount', 'sale', sale_id, payload.reason, metadata={'amount': payload.amount})
+    return {'id': discount_id, 'sale_id': sale_id, 'amount': payload.amount, 'reason': payload.reason, 'approved_by': actor.user_id}
 
 
 @router.post('/receipts/{sale_id}/reprint')

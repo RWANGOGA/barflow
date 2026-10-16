@@ -2,7 +2,7 @@ import { and, desc, eq } from 'drizzle-orm'
 import { headers } from 'next/headers'
 import { auth } from '@/lib/auth'
 import { db } from '@/lib/db'
-import { tabs } from '@/lib/db/schema'
+import { tabs, auditLogs } from '@/lib/db/schema'
 
 async function getUserId() {
   const session = await auth.api.getSession({ headers: await headers() })
@@ -23,7 +23,18 @@ export async function PATCH(request: Request) {
   try {
     const userId = await getUserId()
     const id = new URL(request.url).searchParams.get('id')
+    const voidTab = new URL(request.url).searchParams.get('void') === '1'
     if (!id) return Response.json({ error: 'Missing tab id' }, { status: 400 })
+    if (voidTab) {
+      const body = await request.json()
+      const { reason, pin } = body
+      if (!reason || reason.length < 3) return Response.json({ error: 'Invalid void reason' }, { status: 400 })
+      if (!pin || pin.length < 4) return Response.json({ error: 'Manager PIN required' }, { status: 400 })
+      const [tab] = await db.update(tabs).set({ status: 'voided', voidReason: reason, voidedBy: userId, voidedAt: new Date() }).where(and(eq(tabs.id, id), eq(tabs.userId, userId), eq(tabs.status, 'open'))).returning()
+      if (!tab) return Response.json({ error: 'Tab not found' }, { status: 404 })
+      await db.insert(auditLogs).values({ id: crypto.randomUUID(), userId, action: 'void', recordLabel: tab.tableLabel, approval: 'manager', createdAt: new Date() })
+      return Response.json(tab)
+    }
     const [tab] = await db.update(tabs).set({ status: 'settled', settledAt: new Date() }).where(and(eq(tabs.id, id), eq(tabs.userId, userId), eq(tabs.status, 'open'))).returning()
     if (!tab) return Response.json({ error: 'Tab not found' }, { status: 404 })
     return Response.json(tab)

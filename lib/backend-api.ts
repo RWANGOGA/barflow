@@ -26,4 +26,7 @@ export const backendApi = {
   createInventoryCount: (payload: { product_id: string; counted_quantity: number; notes?: string }) => backendRequest('/inventory/counts', { method: 'POST', body: JSON.stringify(payload) }),
   createAdjustment: (payload: { product_id: string; quantity: number; adjustment_type: 'wastage' | 'adjustment'; reason: string }) => backendRequest('/inventory/adjustments', { method: 'POST', body: JSON.stringify(payload) }),
   audit: () => backendRequest<{ items: unknown[] }>('/audit'),
+  verifyPin: (pin: string) => backendRequest<{ valid: boolean }>('/auth/verify-pin', { method: 'POST', body: JSON.stringify({ pin }) }),
+  setPin: (pin: string) => backendRequest<{ ok: boolean }>('/auth/set-pin', { method: 'POST', body: JSON.stringify({ pin }) }),
+  applyDiscount: (saleId: string, payload: { amount: number; reason: string; pin?: string }) => backendRequest(`/sales/${saleId}/discount`, { method: 'POST', body: JSON.stringify(payload) }),
 }
