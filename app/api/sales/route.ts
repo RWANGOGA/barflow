@@ -25,7 +25,9 @@ export async function POST(request: Request) {
   try {
     const userId = await getUserId()
     const body = await request.json()
-    const total = Number(body.total)
+    const items = Array.isArray(body.items) ? body.items.slice(0, 100).map((item: any) => ({ productId: String(item.productId), name: String(item.name), quantity: Number(item.quantity), price: Number(item.price), lineTotal: Number(item.lineTotal) })) : []
+    if (items.length === 0 || items.some((item: any) => !item.productId || !item.name || !Number.isInteger(item.quantity) || item.quantity <= 0 || !Number.isInteger(item.price) || item.price < 0 || item.lineTotal !== item.price * item.quantity)) return NextResponse.json({ error: 'Invalid sale items' }, { status: 400 })
+    const total = items.reduce((sum: number, item: any) => sum + item.lineTotal, 0)
     if (!Number.isInteger(total) || total <= 0) return NextResponse.json({ error: 'Invalid total' }, { status: 400 })
     const sale = { id: crypto.randomUUID(), userId, paymentMethod: String(body.paymentMethod), total, tableLabel: body.tableLabel ? String(body.tableLabel) : null, status: 'completed' }
     await db.insert(sales).values(sale)
