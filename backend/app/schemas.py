@@ -26,6 +26,10 @@ class TabCreate(BaseModel):
     table_label: str = Field(min_length=1, max_length=80)
     owner_name: str = Field(min_length=1, max_length=120)
 
+class TabItemCreate(BaseModel):
+    product_id: str = Field(min_length=1)
+    quantity: int = Field(gt=0)
+
 class Page(BaseModel):
     items: list[dict]
     next_cursor: str | None = None
