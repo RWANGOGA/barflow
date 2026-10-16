@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from .auth import RequestActor, get_actor
 from .authorization import Actor, require_permission
 from .db import connection
-from .schemas import SaleCreate, TabCreate
+from .schemas import SaleCreate, TabCreate, TabItemCreate
 
 router = APIRouter(prefix='/v1', tags=['domain'])
 
@@ -60,6 +60,22 @@ async def create_tab(payload: TabCreate, actor: RequestActor = Depends(get_actor
             if existing:
                 raise HTTPException(status_code=409, detail='An open tab already exists for this table.')
             row = await conn.fetchrow('INSERT INTO bar_tab (id,user_id,table_label,owner_name) VALUES ($1,$2,$3,$4) RETURNING id, table_label, owner_name, total, status, opened_at', tab_id, actor.user_id, payload.table_label, payload.owner_name)
+    return dict(row)
+
+
+@router.post('/tabs/{tab_id}/items', status_code=201)
+async def add_tab_item(tab_id: str, payload: TabItemCreate, actor: RequestActor = Depends(get_actor)):
+    authorized(actor, 'tabs.manage')
+    async with connection() as conn:
+        async with conn.transaction():
+            tab = await conn.fetchrow("SELECT id FROM bar_tab WHERE id=$1 AND user_id=$2 AND status='open' FOR UPDATE", tab_id, actor.user_id)
+            if not tab:
+                raise HTTPException(status_code=404, detail='Open tab was not found.')
+            product = await conn.fetchrow('SELECT id, price FROM bar_product WHERE id=$1 AND user_id=$2', payload.product_id, actor.user_id)
+            if not product:
+                raise HTTPException(status_code=404, detail='Product was not found.')
+            row = await conn.fetchrow('INSERT INTO bar_tab_item (id,tab_id,user_id,product_id,quantity,unit_price,line_total) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id, product_id, quantity, unit_price, line_total', str(uuid4()), tab_id, actor.user_id, payload.product_id, payload.quantity, product['price'], product['price'] * payload.quantity)
+            await conn.execute('UPDATE bar_tab SET total = total + $1 WHERE id=$2 AND user_id=$3', product['price'] * payload.quantity, tab_id, actor.user_id)
     return dict(row)
 
 

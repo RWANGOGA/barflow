@@ -30,3 +30,13 @@ def test_tabs_require_authentication():
 def test_tabs_validate_status_filter():
     response = TestClient(create_app()).get('/v1/tabs?status=invalid', headers=headers())
     assert response.status_code == 422
+
+
+def test_tab_items_require_authentication():
+    response = TestClient(create_app()).post('/v1/tabs/tab-1/items', json={'product_id': 'p1', 'quantity': 1})
+    assert response.status_code == 401
+
+
+def test_tab_items_validate_quantity():
+    response = TestClient(create_app()).post('/v1/tabs/tab-1/items', headers=headers(), json={'product_id': 'p1', 'quantity': 0})
+    assert response.status_code == 422
