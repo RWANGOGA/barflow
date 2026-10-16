@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from .auth import RequestActor, get_actor
 from .authorization import Actor, require_permission
 from .db import connection
-from .schemas import SaleCreate, TabCreate, TabItemCreate, TabItemUpdate
+from .schemas import SaleCreate, TabCreate, TabItemCreate, TabItemUpdate, TabSettle
 
 router = APIRouter(prefix='/v1', tags=['domain'])
 
@@ -109,6 +109,39 @@ async def remove_tab_item(tab_id: str, item_id: str, actor: RequestActor = Depen
                 raise HTTPException(status_code=404, detail='Tab item was not found.')
             await conn.execute('DELETE FROM bar_tab_item WHERE id=$1 AND tab_id=$2 AND user_id=$3', item_id, tab_id, actor.user_id)
             await conn.execute('UPDATE bar_tab SET total = total - $1 WHERE id=$2 AND user_id=$3', item['quantity'] * item['unit_price'], tab_id, actor.user_id)
+
+
+@router.post('/tabs/{tab_id}/settle')
+async def settle_tab(tab_id: str, payload: TabSettle, actor: RequestActor = Depends(get_actor)):
+    authorized(actor, 'tabs.manage')
+    async with connection() as conn:
+        async with conn.transaction():
+            existing = await conn.fetchrow('SELECT response_json, request_hash FROM bar_idempotency_key WHERE user_id=$1 AND idempotency_key=$2 FOR UPDATE', actor.user_id, payload.idempotency_key)
+            request_hash = hashlib.sha256(payload.model_dump_json().encode()).hexdigest()
+            if existing:
+                if existing['request_hash'] != request_hash:
+                    raise HTTPException(status_code=409, detail='Idempotency key was already used with a different request.')
+                return existing['response_json']
+            tab = await conn.fetchrow("SELECT id, total, table_label, status FROM bar_tab WHERE id=$1 AND user_id=$2 AND status='open' FOR UPDATE", tab_id, actor.user_id)
+            if not tab:
+                raise HTTPException(status_code=404, detail='Open tab was not found.')
+            items = await conn.fetch('SELECT id, product_id, quantity, unit_price, line_total FROM bar_tab_item WHERE tab_id=$1 AND user_id=$2 ORDER BY id FOR UPDATE', tab_id, actor.user_id)
+            if not items:
+                raise HTTPException(status_code=409, detail='Cannot settle an empty tab.')
+            for item in items:
+                product = await conn.fetchrow('SELECT id, stock FROM bar_product WHERE id=$1 AND user_id=$2 FOR UPDATE', item['product_id'], actor.user_id)
+                if not product or product['stock'] < item['quantity']:
+                    raise HTTPException(status_code=409, detail=f'Insufficient stock for product {item["product_id"]}.')
+            sale_id = str(uuid4())
+            await conn.execute('INSERT INTO bar_sale (id,user_id,payment_method,total,table_label,idempotency_key) VALUES ($1,$2,$3,$4,$5,$6)', sale_id, actor.user_id, payload.payment_method.value, tab['total'], tab['table_label'], payload.idempotency_key)
+            for item in items:
+                await conn.execute('INSERT INTO bar_sale_item (id,sale_id,product_id,quantity,unit_price,line_total) VALUES ($1,$2,$3,$4,$5,$6)', str(uuid4()), sale_id, item['product_id'], item['quantity'], item['unit_price'], item['line_total'])
+                await conn.execute('UPDATE bar_product SET stock=stock-$1, updated_at=now() WHERE id=$2 AND user_id=$3', item['quantity'], item['product_id'], actor.user_id)
+                await conn.execute('INSERT INTO bar_stock_movement (id,user_id,product_id,quantity,movement_type,reference) VALUES ($1,$2,$3,$4,$5,$6)', str(uuid4()), actor.user_id, item['product_id'], -item['quantity'], 'sale', sale_id)
+            response = {'tab_id': tab_id, 'sale_id': sale_id, 'total': tab['total'], 'payment_method': payload.payment_method.value, 'status': 'settled'}
+            await conn.execute("UPDATE bar_tab SET status='settled', payment_method=$1, settled_by=$2, sale_id=$3, settled_at=now() WHERE id=$4 AND user_id=$5", payload.payment_method.value, actor.user_id, sale_id, tab_id, actor.user_id)
+            await conn.execute('INSERT INTO bar_idempotency_key (user_id,idempotency_key,request_hash,response_json) VALUES ($1,$2,$3,$4::jsonb)', actor.user_id, payload.idempotency_key, request_hash, json.dumps(response))
+    return response
 
 
 @router.get('/tabs')
