@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { headers } from 'next/headers'
 import { auth } from '@/lib/auth'
 import { db } from '@/lib/db'
-import { tradingDays } from '@/lib/db/schema'
+import { tradingDays, tabs } from '@/lib/db/schema'
 import { and, eq } from 'drizzle-orm'
 
 async function getUserId() {
@@ -36,7 +36,9 @@ export async function POST(request: Request) {
       return NextResponse.json({ ...day, status: 'open' })
     }
     if (action === 'close' && existing[0]) {
-      await db.update(tradingDays).set({ status: 'closed', countedCash: Number(body.countedCash) || 0, closedAt: new Date() }).where(and(eq(tradingDays.id, existing[0].id), eq(tradingDays.userId, userId)))
+      const openTabs = await db.select().from(tabs).where(and(eq(tabs.userId, userId), eq(tabs.status, 'open'))).limit(1)
+      if (openTabs.length > 0) return NextResponse.json({ error: 'Open tabs must be settled before closing.' }, { status: 400 })
+      await db.update(tradingDays).set({ status: 'closed', countedCash: Number(body.countedCash) || 0, closedAt: new Date(), varianceAccepted: true }).where(and(eq(tradingDays.id, existing[0].id), eq(tradingDays.userId, userId)))
       return NextResponse.json({ ...existing[0], status: 'closed' })
     }
     return NextResponse.json({ error: 'Invalid day action' }, { status: 400 })

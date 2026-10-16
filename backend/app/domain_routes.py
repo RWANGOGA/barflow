@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from .auth import RequestActor, get_actor
 from .authorization import Actor, require_permission
 from .db import connection
-from .schemas import DeliveryCreate, DeliveryOut, DiscountCreate, DiscountOut, InventoryCountCreate, MenuStockLinkCreate, MenuStockLinkOut, PinSet, PinVerify, ReceiptCreate, ReceiptOut, ReceiptReprintCreate, Role, SaleCreate, SettingCreate, SettingOut, StockAdjustmentCreate, TabCreate, TabItemCreate, TabItemUpdate, TabSettle, TabVoid, TabReopen, TransferCreate, TransferOut
+from .schemas import DayCloseCreate, DayCloseOut, DeliveryCreate, DeliveryOut, DiscountCreate, DiscountOut, InventoryCountCreate, MenuStockLinkCreate, MenuStockLinkOut, PinSet, PinVerify, ReceiptCreate, ReceiptOut, ReceiptReprintCreate, Role, SaleCreate, SettingCreate, SettingOut, StockAdjustmentCreate, StockCountCreate, StockCountOut, TabCreate, TabItemCreate, TabItemUpdate, TabSettle, TabVoid, TabReopen, TransferCreate, TransferOut, VarianceHistoryOut, VarianceToleranceCreate, VarianceToleranceOut
 
 router = APIRouter(prefix='/v1', tags=['domain'])
 
@@ -429,11 +429,112 @@ async def inventory_variance_report(actor: RequestActor = Depends(get_actor), li
 
 
 @router.post('/day-close', status_code=201)
-async def close_day(actor: RequestActor = Depends(get_actor)):
+async def close_day(payload: DayCloseCreate = DayCloseCreate(action='close'), actor: RequestActor = Depends(get_actor)):
+    authorized(actor, 'day.close')
+    if payload.action not in ('open', 'close'):
+        raise HTTPException(status_code=400, detail='Invalid action.')
+    async with connection() as conn:
+        async with conn.transaction():
+            if payload.action == 'open':
+                existing = await conn.fetchrow("SELECT id FROM bar_day WHERE user_id=$1 AND status='open' FOR UPDATE", actor.user_id)
+                if existing:
+                    raise HTTPException(status_code=409, detail='An open business day already exists.')
+                prev = await conn.fetchrow("SELECT counted_cash FROM bar_day WHERE user_id=$1 AND status='closed' ORDER BY closed_at DESC LIMIT 1", actor.user_id)
+                opening = payload.opening_float if payload.opening_float is not None else (prev['counted_cash'] if prev and prev['counted_cash'] is not None else 0)
+                row = await conn.fetchrow("INSERT INTO bar_day (id,user_id,business_date,status,opening_float) VALUES ($1,$2,CURRENT_DATE,'open',$3) RETURNING id,business_date,status,opening_float,opened_at", str(uuid4()), actor.user_id, opening)
+                return dict(row)
+            # close
+            row = await conn.fetchrow("SELECT id,opening_float FROM bar_day WHERE user_id=$1 AND status='open' FOR UPDATE", actor.user_id)
+            if not row:
+                raise HTTPException(status_code=409, detail='No open business day to close.')
+            day_id = row['id']
+            open_tabs = await conn.fetchrow("SELECT count(*)::int AS cnt FROM bar_tab WHERE user_id=$1 AND status='open'", actor.user_id)
+            if open_tabs['cnt'] > 0:
+                raise HTTPException(status_code=409, detail='Open tabs must be settled or carried before closing the day.')
+            sales = await conn.fetchrow("SELECT coalesce(sum(total),0)::int AS total, coalesce(sum(CASE WHEN payment_method='cash' THEN total ELSE 0 END),0)::int AS cash_sales FROM bar_sale WHERE user_id=$1 AND status='completed' AND DATE(created_at)=CURRENT_DATE", actor.user_id)
+            expected_cash = (row['opening_float'] or 0) + sales['cash_sales']
+            counted_cash = payload.counted_cash if payload.counted_cash is not None else 0
+            cash_variance = counted_cash - expected_cash
+            stock_rows = await conn.fetch("SELECT sc.variance_units, sc.variance_value FROM bar_stock_count sc WHERE sc.day_id=$1", day_id)
+            stock_variance_units = sum(r['variance_units'] for r in stock_rows)
+            stock_variance_value = sum(r['variance_value'] for r in stock_rows)
+            if not row.get('variance_accepted') and (cash_variance != 0 or stock_variance_units != 0):
+                raise HTTPException(status_code=409, detail='Variance must be accepted with a reason before closing the day.')
+            await conn.execute("UPDATE bar_day SET status='closed', closed_at=now(), expected_cash=$1, cash_variance=$2, stock_variance_units=$3, stock_variance_value=$4, locked=true WHERE id=$5 AND user_id=$6 RETURNING id,business_date,status,opening_float,counted_cash,expected_cash,cash_variance,stock_variance_units,stock_variance_value,closed_at", expected_cash, cash_variance, stock_variance_units, stock_variance_value, day_id, actor.user_id)
+            row = await conn.fetchrow("SELECT id,business_date,status,opening_float,counted_cash,expected_cash,cash_variance,stock_variance_units,stock_variance_value,closed_at FROM bar_day WHERE id=$1", day_id)
+    return dict(row)
+
+
+@router.post('/day-reopen', status_code=200)
+async def reopen_day(payload: TabVoid, actor: RequestActor = Depends(get_actor)):
     authorized(actor, 'day.close')
     async with connection() as conn:
         async with conn.transaction():
-            row = await conn.fetchrow("UPDATE bar_day SET status='closed', closed_at=now() WHERE user_id=$1 AND status='open' RETURNING id,business_date,status,closed_at", actor.user_id)
+            if actor.role != Role.admin:
+                if not payload.pin:
+                    raise HTTPException(status_code=400, detail='Manager PIN is required to reopen a day.')
+                pin_row = await conn.fetchrow('SELECT pin_hash FROM bar_user_pin WHERE user_id=$1', actor.user_id)
+                if not pin_row or not pin_row['pin_hash']:
+                    raise HTTPException(status_code=400, detail='No PIN set for this user.')
+                if hashlib.sha256(payload.pin.encode()).hexdigest() != pin_row['pin_hash']:
+                    raise HTTPException(status_code=403, detail='Invalid PIN.')
+            row = await conn.fetchrow("UPDATE bar_day SET status='open', closed_at=NULL, locked=false WHERE user_id=$1 AND status='closed' AND locked=true RETURNING id,business_date,status,opened_at", actor.user_id)
             if not row:
-                raise HTTPException(status_code=409, detail='No open business day to close.')
+                raise HTTPException(status_code=404, detail='No closed locked day to reopen.')
+            await write_audit(conn, actor, 'reopen', 'day', row['id'], payload.reason)
     return dict(row)
+
+
+@router.post('/stock-counts', status_code=201)
+async def submit_stock_count(payload: StockCountCreate, actor: RequestActor = Depends(get_actor)):
+    authorized(actor, 'inventory.manage')
+    async with connection() as conn:
+        async with conn.transaction():
+            day = await conn.fetchrow("SELECT id FROM bar_day WHERE user_id=$1 AND status='open' ORDER BY opened_at DESC LIMIT 1", actor.user_id)
+            if not day:
+                raise HTTPException(status_code=409, detail='No open business day.')
+            product = await conn.fetchrow('SELECT id, price, stock FROM bar_product WHERE id=$1 AND user_id=$2', payload.product_id, actor.user_id)
+            if not product:
+                raise HTTPException(status_code=404, detail='Product not found.')
+            expected = product['stock']
+            variance_units = payload.counted_quantity - expected
+            variance_value = variance_units * product['price']
+            row = await conn.fetchrow("INSERT INTO bar_stock_count (id,user_id,day_id,product_id,counted_quantity,expected_quantity,variance_units,variance_value) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id,day_id,product_id,counted_quantity,expected_quantity,variance_units,variance_value", str(uuid4()), actor.user_id, day['id'], payload.product_id, payload.counted_quantity, expected, variance_units, variance_value)
+            await conn.execute("INSERT INTO bar_variance_history (id,user_id,day_id,product_id,variance_units,variance_value) VALUES ($1,$2,$3,$4,$5,$6)", str(uuid4()), actor.user_id, day['id'], payload.product_id, variance_units, variance_value)
+    return dict(row)
+
+
+@router.post('/variance-tolerance', status_code=201)
+async def set_variance_tolerance(payload: VarianceToleranceCreate, actor: RequestActor = Depends(get_actor)):
+    authorized(actor, 'day.close')
+    async with connection() as conn:
+        await conn.execute("INSERT INTO bar_variance_tolerance (user_id,product_id,tolerance_units) VALUES ($1,$2,$3) ON CONFLICT (user_id,product_id) DO UPDATE SET tolerance_units=$3", actor.user_id, payload.product_id, payload.tolerance_units)
+    return {'product_id': payload.product_id, 'tolerance_units': payload.tolerance_units}
+
+
+@router.get('/daily-report')
+async def daily_report(actor: RequestActor = Depends(get_actor), business_date: str | None = None):
+    authorized(actor, 'reports.read')
+    async with connection() as conn:
+        day = await conn.fetchrow("SELECT * FROM bar_day WHERE user_id=$1 AND ($2::text IS NULL OR business_date=$2) ORDER BY business_date DESC LIMIT 1", actor.user_id, business_date)
+        if not day:
+            raise HTTPException(status_code=404, detail='No business day found.')
+        sales = await conn.fetchrow("SELECT count(*)::int AS orders, coalesce(sum(total),0)::int AS total_sales FROM bar_sale WHERE user_id=$1 AND status='completed' AND DATE(created_at)=$2", actor.user_id, day['business_date'])
+        by_payment = await conn.fetch("SELECT payment_method, count(*)::int AS orders, coalesce(sum(total),0)::int AS total FROM bar_sale WHERE user_id=$1 AND status='completed' AND DATE(created_at)=$2 GROUP BY payment_method ORDER BY payment_method", actor.user_id, day['business_date'])
+        voids = await conn.fetchrow("SELECT count(*)::int AS voids FROM bar_sale WHERE user_id=$1 AND voided=true AND DATE(created_at)=$2", actor.user_id, day['business_date'])
+        discounts = await conn.fetchrow("SELECT count(*)::int AS discounts, coalesce(sum(amount),0)::int AS discount_total FROM bar_discount WHERE user_id=$1 AND DATE(created_at)=$2", actor.user_id, day['business_date'])
+        wastage = await conn.fetchrow("SELECT coalesce(sum(quantity),0)::int AS wastage_qty FROM bar_stock_movement WHERE user_id=$1 AND movement_type='wastage' AND DATE(created_at)=$2", actor.user_id, day['business_date'])
+        drink_sales = await conn.fetchrow("SELECT coalesce(sum(total),0)::int AS drink_sales, coalesce(sum(si.unit_price * si.quantity),0)::int AS drink_cost FROM bar_sale s JOIN bar_sale_item si ON si.sale_id=s.id WHERE s.user_id=$1 AND s.status='completed' AND DATE(s.created_at)=$2", actor.user_id, day['business_date'])
+        pour_cost = (drink_sales['drink_cost'] / drink_sales['drink_sales'] * 100) if drink_sales['drink_sales'] > 0 else 0.0
+    return {
+        'business_date': str(day['business_date']),
+        'orders': sales['orders'],
+        'total_sales': sales['total_sales'],
+        'by_payment': [dict(r) for r in by_payment],
+        'voids': voids['voids'],
+        'discounts': discounts['discounts'],
+        'wastage': wastage['wastage_qty'],
+        'cash_variance': day['cash_variance'],
+        'stock_variance_value': day['stock_variance_value'],
+        'pour_cost': round(pour_cost, 2),
+    }

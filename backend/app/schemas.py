@@ -176,3 +176,69 @@ class TransferOut(BaseModel):
     to_location: str
     reason: str | None = None
     created_at: str
+
+
+class DayCloseCreate(BaseModel):
+    action: str = Field(pattern='^(open|close)$')
+    opening_float: int | None = Field(default=0, ge=0)
+    counted_cash: int | None = Field(default=None, ge=0)
+
+
+class DayCloseOut(BaseModel):
+    id: str
+    business_date: str
+    status: str
+    opening_float: int
+    counted_cash: int | None = None
+    expected_cash: int | None = None
+    cash_variance: int | None = None
+    closed_at: str | None = None
+
+
+class StockCountCreate(BaseModel):
+    day_id: str = Field(min_length=1)
+    product_id: str = Field(min_length=1)
+    counted_quantity: int = Field(ge=0)
+
+
+class StockCountOut(BaseModel):
+    id: str
+    day_id: str
+    product_id: str
+    counted_quantity: int
+    expected_quantity: int
+    variance_units: int
+    variance_value: int
+
+
+class VarianceToleranceCreate(BaseModel):
+    product_id: str = Field(min_length=1)
+    tolerance_units: int = Field(ge=0)
+
+
+class VarianceToleranceOut(BaseModel):
+    user_id: str
+    product_id: str
+    tolerance_units: int
+
+
+class VarianceHistoryOut(BaseModel):
+    id: str
+    day_id: str
+    product_id: str
+    variance_units: int
+    variance_value: int
+    created_at: str
+
+
+class DailyReportOut(BaseModel):
+    business_date: str
+    orders: int
+    total_sales: int
+    by_payment: list[dict]
+    voids: int
+    discounts: int
+    wastage: int
+    cash_variance: int
+    stock_variance_value: int
+    pour_cost: float
