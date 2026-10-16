@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from .auth import RequestActor, get_actor
 from .authorization import Actor, require_permission
 from .db import connection
-from .schemas import SaleCreate, TabCreate, TabItemCreate, TabItemUpdate, TabSettle
+from .schemas import SaleCreate, TabCreate, TabItemCreate, TabItemUpdate, TabSettle, TabVoid, TabReopen
 
 router = APIRouter(prefix='/v1', tags=['domain'])
 
@@ -142,6 +142,28 @@ async def settle_tab(tab_id: str, payload: TabSettle, actor: RequestActor = Depe
             await conn.execute("UPDATE bar_tab SET status='settled', payment_method=$1, settled_by=$2, sale_id=$3, settled_at=now() WHERE id=$4 AND user_id=$5", payload.payment_method.value, actor.user_id, sale_id, tab_id, actor.user_id)
             await conn.execute('INSERT INTO bar_idempotency_key (user_id,idempotency_key,request_hash,response_json) VALUES ($1,$2,$3,$4::jsonb)', actor.user_id, payload.idempotency_key, request_hash, json.dumps(response))
     return response
+
+
+@router.post('/tabs/{tab_id}/void')
+async def void_tab(tab_id: str, payload: TabVoid, actor: RequestActor = Depends(get_actor)):
+    authorized(actor, 'tabs.void')
+    async with connection() as conn:
+        async with conn.transaction():
+            row = await conn.fetchrow("UPDATE bar_tab SET status='voided', voided_by=$1, void_reason=$2 WHERE id=$3 AND user_id=$4 AND status='open' RETURNING id, status, void_reason, voided_by", actor.user_id, payload.reason, tab_id, actor.user_id)
+            if not row:
+                raise HTTPException(status_code=404, detail='Open tab was not found.')
+    return dict(row)
+
+
+@router.post('/tabs/{tab_id}/reopen')
+async def reopen_tab(tab_id: str, payload: TabReopen, actor: RequestActor = Depends(get_actor)):
+    authorized(actor, 'tabs.reopen')
+    async with connection() as conn:
+        async with conn.transaction():
+            row = await conn.fetchrow("UPDATE bar_tab SET status='open', reopened_by=$1, reopen_reason=$2, settled_at=NULL, payment_method=NULL, settled_by=NULL, sale_id=NULL WHERE id=$3 AND user_id=$4 AND status='settled' RETURNING id, status, reopen_reason, reopened_by", actor.user_id, payload.reason, tab_id, actor.user_id)
+            if not row:
+                raise HTTPException(status_code=404, detail='Settled tab was not found.')
+    return dict(row)
 
 
 @router.get('/tabs')
