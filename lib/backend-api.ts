@@ -23,5 +23,7 @@ export const backendApi = {
   inventoryAdjustments: () => backendRequest<{ items: unknown[] }>('/inventory/adjustments'),
   inventoryMovements: (productId?: string) => backendRequest<{ items: unknown[] }>(`/inventory/movements${productId ? `?product_id=${encodeURIComponent(productId)}` : ''}`),
   inventoryVariance: () => backendRequest<{ items: unknown[]; total_variance: number }>('/inventory/variance'),
+  createInventoryCount: (payload: { product_id: string; counted_quantity: number; notes?: string }) => backendRequest('/inventory/counts', { method: 'POST', body: JSON.stringify(payload) }),
+  createAdjustment: (payload: { product_id: string; quantity: number; adjustment_type: 'wastage' | 'adjustment'; reason: string }) => backendRequest('/inventory/adjustments', { method: 'POST', body: JSON.stringify(payload) }),
   audit: () => backendRequest<{ items: unknown[] }>('/audit'),
 }
