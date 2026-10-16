@@ -453,7 +453,7 @@ function OverviewView({
       </header>
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        <card className="rounded-2xl bg-white p-5 shadow-sm border border-[#e2e7ee]">
+       <div className="rounded-2xl bg-white p-5 shadow-sm border border-[#e2e7ee]"></div>
           <p className="text-xs font-bold uppercase tracking-wide text-[#8a96a5]">Products</p>
           <p className="mt-2 text-2xl font-bold">{inventoryCount}</p>
         </card>
