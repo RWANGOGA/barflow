@@ -18,7 +18,7 @@ export async function backendRequest<T>(path: string, init?: RequestInit): Promi
 export const backendApi = {
   me: () => backendRequest<{ user_id: string; role: BackendRole }>('/auth/me'),
   inventory: (cursor?: string) => backendRequest<{ items: unknown[]; next_cursor: string | null }>(`/inventory${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ''}`),
-  reports: () => backendRequest<{ orders: number; total: number; by_payment: unknown[] }>('/reports/summary'),
+  reports: (from?: string, to?: string) => backendRequest<{ orders: number; total: number; by_payment: unknown[]; by_category?: unknown[]; by_product?: unknown[] }>(`/reports/summary${from || to ? `?from=${encodeURIComponent(from ?? '')}&to=${encodeURIComponent(to ?? '')}` : ''}`),
   inventoryCounts: () => backendRequest<{ items: unknown[] }>('/inventory/counts'),
   inventoryAdjustments: () => backendRequest<{ items: unknown[] }>('/inventory/adjustments'),
   inventoryMovements: (productId?: string) => backendRequest<{ items: unknown[] }>(`/inventory/movements${productId ? `?product_id=${encodeURIComponent(productId)}` : ''}`),
