@@ -43,6 +43,11 @@ class TabVoid(BaseModel):
 class TabReopen(BaseModel):
     reason: str = Field(min_length=3, max_length=500)
 
+class InventoryCountCreate(BaseModel):
+    product_id: str = Field(min_length=1)
+    counted_quantity: int = Field(ge=0)
+    notes: str | None = Field(default=None, max_length=500)
+
 class Page(BaseModel):
     items: list[dict]
     next_cursor: str | None = None

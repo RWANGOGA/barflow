@@ -70,3 +70,13 @@ def test_void_tab_requires_manager_permission():
 def test_reopen_tab_requires_admin_permission():
     response = TestClient(create_app()).post('/v1/tabs/tab-1/reopen', headers={'x-user-id': 'manager-1', 'x-user-role': 'Manager'}, json={'reason': 'Approved correction'})
     assert response.status_code == 403
+
+
+def test_inventory_count_requires_authentication():
+    response = TestClient(create_app()).post('/v1/inventory/counts', json={'product_id': 'p1', 'counted_quantity': 2})
+    assert response.status_code == 401
+
+
+def test_inventory_count_rejects_negative_quantity():
+    response = TestClient(create_app()).post('/v1/inventory/counts', headers=headers('Storekeeper'), json={'product_id': 'p1', 'counted_quantity': -1})
+    assert response.status_code == 422
