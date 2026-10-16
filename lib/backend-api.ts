@@ -1,7 +1,9 @@
 export type BackendRole = 'Admin' | 'Manager' | 'Cashier' | 'Storekeeper'
 
+const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL ?? 'https://barflow-rk55.onrender.com'
+
 export async function backendRequest<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`/api/backend${path}`, {
+  const response = await fetch(`${BACKEND_URL}${path}`, {
     ...init,
     headers: { 'content-type': 'application/json', ...(init?.headers ?? {}) },
     credentials: 'include',
