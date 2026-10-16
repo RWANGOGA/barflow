@@ -41,3 +41,5 @@ export const auditLogs = pgTable('bar_audit_log', { id: text('id').primaryKey(),
 
 export const schema = { user, session, account, verification, products, sales, saleItems, stockMovements, tradingDays, tabs, teamMembers, auditLogs, receipts, receiptCounter, salePayments, settings, userPins, discounts, menuStockLinks, stockDeliveries, stockTransfers, stockCounts, varianceTolerances, varianceHistory }
 export type ProductRow = typeof products.$inferSelect
+
+export const loginAttempts = pgTable('bar_login_attempts', { id: text('id').primaryKey(), userId: text('user_id').notNull(), attemptedAt: timestamp('attempted_at', { withTimezone: true }).notNull().defaultNow(), success: boolean('success').notNull().default(false), ipAddress: text('ip_address'), createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow() })

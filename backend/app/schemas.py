@@ -242,3 +242,31 @@ class DailyReportOut(BaseModel):
     cash_variance: int
     stock_variance_value: int
     pour_cost: float
+
+
+class LoginAttemptCreate(BaseModel):
+    user_id: str = Field(min_length=1)
+    success: bool
+    ip_address: str | None = Field(default=None, max_length=100)
+
+
+class LoginAttemptOut(BaseModel):
+    id: str
+    user_id: str
+    attempted_at: str
+    success: bool
+
+
+class ExportRequest(BaseModel):
+    tables: list[str] | None = Field(default=None, max_length=20)
+
+
+class ExportTable(BaseModel):
+    table: str
+    rows: list[dict]
+    count: int
+
+
+class ExportResponse(BaseModel):
+    exported_at: str
+    tables: list[ExportTable]
