@@ -434,7 +434,7 @@ function OverviewView({
     <section className="space-y-6">
       <header>
         <p className="text-xs font-semibold text-[#8a96a5]">
-          {new Date().toLocaleDateString(undefined, {
+          {new Date().toLocaleDateString('en-US', {
             weekday: 'long',
             day: 'numeric',
             month: 'long',
