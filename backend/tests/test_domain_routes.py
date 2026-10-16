@@ -40,3 +40,13 @@ def test_tab_items_require_authentication():
 def test_tab_items_validate_quantity():
     response = TestClient(create_app()).post('/v1/tabs/tab-1/items', headers=headers(), json={'product_id': 'p1', 'quantity': 0})
     assert response.status_code == 422
+
+
+def test_update_tab_item_requires_positive_quantity():
+    response = TestClient(create_app()).patch('/v1/tabs/tab-1/items/item-1', headers=headers(), json={'quantity': 0})
+    assert response.status_code == 422
+
+
+def test_remove_tab_item_requires_authentication():
+    response = TestClient(create_app()).delete('/v1/tabs/tab-1/items/item-1')
+    assert response.status_code == 401
