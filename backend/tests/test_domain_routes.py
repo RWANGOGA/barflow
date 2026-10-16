@@ -60,3 +60,13 @@ def test_settle_tab_requires_authentication():
 def test_settle_tab_validates_idempotency_key():
     response = TestClient(create_app()).post('/v1/tabs/tab-1/settle', headers=headers(), json={'payment_method': 'cash', 'idempotency_key': 'short'})
     assert response.status_code == 422
+
+
+def test_void_tab_requires_manager_permission():
+    response = TestClient(create_app()).post('/v1/tabs/tab-1/void', headers={'x-user-id': 'cashier-1', 'x-user-role': 'Cashier'}, json={'reason': 'Correction'})
+    assert response.status_code == 403
+
+
+def test_reopen_tab_requires_admin_permission():
+    response = TestClient(create_app()).post('/v1/tabs/tab-1/reopen', headers={'x-user-id': 'manager-1', 'x-user-role': 'Manager'}, json={'reason': 'Approved correction'})
+    assert response.status_code == 403

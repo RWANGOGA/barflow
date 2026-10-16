@@ -37,6 +37,12 @@ class TabSettle(BaseModel):
     payment_method: PaymentMethod
     idempotency_key: str = Field(min_length=8, max_length=128)
 
+class TabVoid(BaseModel):
+    reason: str = Field(min_length=3, max_length=500)
+
+class TabReopen(BaseModel):
+    reason: str = Field(min_length=3, max_length=500)
+
 class Page(BaseModel):
     items: list[dict]
     next_cursor: str | None = None
