@@ -1,6 +1,7 @@
 from collections.abc import Awaitable, Callable
+from uuid import uuid4
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
 from .config import Settings, settings as default_settings
@@ -16,6 +17,13 @@ def create_app(*, app_settings: Settings = default_settings, database_check: Dat
         version="0.1.0",
         description="Backend service for the Barflow bar-management system.",
     )
+
+    @app.middleware("http")
+    async def request_id_middleware(request: Request, call_next):
+        request_id = request.headers.get("x-request-id") or str(uuid4())
+        response = await call_next(request)
+        response.headers["x-request-id"] = request_id
+        return response
 
     @app.get("/health", tags=["system"])
     def health_check() -> dict[str, str]:

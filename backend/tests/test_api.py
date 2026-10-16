@@ -8,6 +8,12 @@ def test_health_check():
     response = TestClient(create_app()).get('/health')
     assert response.status_code == 200
     assert response.json() == {'status': 'ok'}
+    assert response.headers['x-request-id']
+
+
+def test_request_id_is_preserved():
+    response = TestClient(create_app()).get('/health', headers={'x-request-id': 'request-123'})
+    assert response.headers['x-request-id'] == 'request-123'
 
 
 def test_readiness_requires_database_configuration():
