@@ -1,5 +1,7 @@
 from backend.app.main import create_app
 from fastapi.testclient import TestClient
+from backend.app.auth import RequestActor, get_actor
+from backend.app.schemas import Role
 
 
 def test_close_day_requires_authentication():
@@ -8,9 +10,10 @@ def test_close_day_requires_authentication():
 
 
 def test_close_day_rejects_invalid_action():
-    response = TestClient(create_app()).post(
+    app = create_app()
+    app.dependency_overrides[get_actor] = lambda: RequestActor('user-calc', Role.manager)
+    response = TestClient(app).post(
         '/v1/day-close',
-        headers={'x-user-id': 'user-calc', 'x-user-role': 'Manager'},
         json={'action': 'invalid'},
     )
     assert response.status_code == 422
@@ -22,10 +25,9 @@ def test_daily_report_requires_authentication():
 
 
 def test_daily_report_returns_structure_when_no_day():
-    response = TestClient(create_app()).get(
-        '/v1/reports/daily',
-        headers={'x-user-id': 'user-pour', 'x-user-role': 'Manager'},
-    )
+    app = create_app()
+    app.dependency_overrides[get_actor] = lambda: RequestActor('user-pour', Role.manager)
+    response = TestClient(app).get('/v1/reports/daily')
     assert response.status_code == 404
 
 

@@ -2,7 +2,7 @@ export type BackendRole = 'Admin' | 'Manager' | 'Cashier' | 'Storekeeper'
 
 export type PaymentMethod = 'cash' | 'mobile_money' | 'card'
 
-const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL ?? 'https://barflow-rk55.onrender.com'
+const BACKEND_URL = '/api/backend'
 
 export async function backendRequest<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${BACKEND_URL}${path}`, {
@@ -11,7 +11,7 @@ export async function backendRequest<T>(path: string, init?: RequestInit): Promi
       'content-type': 'application/json',
       ...(init?.headers ?? {}),
     },
-    credentials: 'include', // sends Better Auth session cookie
+    credentials: 'same-origin',
   })
 
   const body = await response.json().catch(() => null)

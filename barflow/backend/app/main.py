@@ -11,6 +11,7 @@ from fastapi.responses import JSONResponse
 
 from .config import Settings, settings as default_settings
 from .auth import RequestActor, get_actor, pin_sign_in
+from .compat_routes import router as compat_router
 from .domain_routes import router as domain_router
 from .operations_routes import router as operations_router
 from .errors import ApiError, api_error_response, validation_error_response
@@ -46,6 +47,7 @@ def create_app(*, app_settings: Settings = default_settings, database_check: Dat
 
     app.include_router(domain_router)
     app.include_router(operations_router)
+    app.include_router(compat_router)
     app.add_exception_handler(ApiError, lambda request, error: api_error_response(error))
     app.add_exception_handler(RequestValidationError, validation_error_response)
 

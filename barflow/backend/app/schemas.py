@@ -32,6 +32,31 @@ class SaleCreate(BaseModel):
     table_label: str | None = Field(default=None, max_length=80)
     idempotency_key: str = Field(min_length=8, max_length=128)
 
+
+class ProductUpsert(BaseModel):
+    id: str = Field(min_length=1, max_length=128)
+    name: str = Field(min_length=1, max_length=200)
+    category: str = Field(min_length=1, max_length=100)
+    price: int = Field(gt=0)
+    stock: int = Field(ge=0)
+    reorder: int = Field(ge=0)
+    cost: int = Field(ge=0)
+    unit: str = Field(min_length=1, max_length=40)
+    tone: str = Field(default='slate', max_length=40)
+
+
+class StockReceive(BaseModel):
+    product_id: str = Field(min_length=1)
+    quantity: int = Field(gt=0)
+    reference: str = Field(default='Delivery', max_length=200)
+
+
+class TeamMemberCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    role: Literal['Cashier', 'Manager', 'Storekeeper']
+    pin: str = Field(pattern=r'^\d{4,6}$')
+
+
 class TabCreate(BaseModel):
     table_label: str = Field(min_length=1, max_length=80)
     owner_name: str = Field(min_length=1, max_length=120)
