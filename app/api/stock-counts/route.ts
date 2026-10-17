@@ -2,7 +2,7 @@ import { and, eq } from 'drizzle-orm'
 import { NextResponse } from 'next/server'
 import { authErrorResponse, requirePermission } from '@/lib/permissions'
 import { db } from '@/lib/db'
-import { products, stockCounts, tradingDays } from '@/lib/db/schema'
+import { products, stockCounts, tradingDays, auditLogs } from '@/lib/db/schema'
 
 export async function POST(request: Request) {
   try {
@@ -43,6 +43,18 @@ export async function POST(request: Request) {
         varianceValue: varianceUnits * product.price,
       })
       .returning()
+
+    await db.insert(auditLogs).values({
+      id: crypto.randomUUID(),
+      userId: user.id,
+      action: 'count',
+      entityType: 'stock_count',
+      entityId: count.id,
+      reason: 'Stock count',
+      metadata: { productId, countedQuantity, expectedQuantity: product.stock, varianceUnits },
+      recordLabel: productId,
+      approval: 'Recorded',
+    })
 
     return NextResponse.json(count, { status: 201 })
   } catch (error) {

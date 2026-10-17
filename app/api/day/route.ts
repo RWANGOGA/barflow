@@ -1,8 +1,28 @@
-import { and, eq } from 'drizzle-orm'
+import { and, eq, gte } from 'drizzle-orm'
 import { NextResponse } from 'next/server'
 import { authErrorResponse, requireAuth, requirePermission } from '@/lib/permissions'
 import { db } from '@/lib/db'
-import { tradingDays, tabs } from '@/lib/db/schema'
+import { salePayments, sales, tabs, tradingDays } from '@/lib/db/schema'
+
+async function expectedCashFor(userId: string, openingFloat: number) {
+  const todayStart = new Date()
+  todayStart.setHours(0, 0, 0, 0)
+  const todaySales = await db
+    .select()
+    .from(sales)
+    .where(and(eq(sales.userId, userId), eq(sales.status, 'completed'), eq(sales.voided, false), gte(sales.createdAt, todayStart)))
+  const saleIds = new Set(todaySales.map((sale) => sale.id))
+  const payments = saleIds.size
+    ? await db.select().from(salePayments).where(eq(salePayments.userId, userId))
+    : []
+  const cashFromPayments = payments
+    .filter((payment) => saleIds.has(payment.saleId) && payment.method === 'cash')
+    .reduce((sum, payment) => sum + payment.amount, 0)
+  const cashFallback = todaySales
+    .filter((sale) => sale.paymentMethod === 'cash')
+    .reduce((sum, sale) => sum + sale.total, 0)
+  return openingFloat + (cashFromPayments || cashFallback)
+}
 
 export async function GET() {
   try {
@@ -45,7 +65,7 @@ export async function POST(request: Request) {
         status: 'open',
         openingFloat: Number(body.openingFloat) || 0,
       }
-      if (existing[0]) await db.update(tradingDays).set({ status: 'open' }).where(and(eq(tradingDays.id, day.id), eq(tradingDays.userId, userId)))
+      if (existing[0]) await db.update(tradingDays).set({ status: 'open', locked: false, closedAt: null }).where(and(eq(tradingDays.id, day.id), eq(tradingDays.userId, userId)))
       else await db.insert(tradingDays).values(day)
       return NextResponse.json({ ...day, status: 'open' })
     }
@@ -53,8 +73,21 @@ export async function POST(request: Request) {
     if (action === 'close' && existing[0]) {
       const openTabs = await db.select().from(tabs).where(and(eq(tabs.userId, userId), eq(tabs.status, 'open'))).limit(1)
       if (openTabs.length > 0) return NextResponse.json({ error: 'Open tabs must be settled before closing.' }, { status: 400 })
-      await db.update(tradingDays).set({ status: 'closed', countedCash: Number(body.countedCash) || 0, closedAt: new Date(), varianceAccepted: true }).where(and(eq(tradingDays.id, existing[0].id), eq(tradingDays.userId, userId)))
-      return NextResponse.json({ ...existing[0], status: 'closed' })
+      const countedCash = Number(body.countedCash) || 0
+      const expectedCash = await expectedCashFor(userId, existing[0].openingFloat ?? 0)
+      const cashVariance = countedCash - expectedCash
+      const reason = typeof body.varianceReason === 'string' ? body.varianceReason.trim() : ''
+      await db.update(tradingDays).set({
+        status: 'closed',
+        countedCash,
+        expectedCash,
+        cashVariance,
+        varianceReason: reason || null,
+        varianceAccepted: true,
+        locked: true,
+        closedAt: new Date(),
+      }).where(and(eq(tradingDays.id, existing[0].id), eq(tradingDays.userId, userId)))
+      return NextResponse.json({ ...existing[0], status: 'closed', countedCash, expectedCash, cashVariance, locked: true })
     }
 
     return NextResponse.json({ error: 'Invalid day action' }, { status: 400 })

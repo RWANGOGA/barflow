@@ -2,7 +2,7 @@ import { and, desc, eq, sql } from 'drizzle-orm'
 import { NextResponse } from 'next/server'
 import { authErrorResponse, requirePermission } from '@/lib/permissions'
 import { db } from '@/lib/db'
-import { products, stockDeliveries, stockMovements } from '@/lib/db/schema'
+import { products, stockDeliveries, stockMovements, auditLogs } from '@/lib/db/schema'
 
 export async function GET() {
   try {
@@ -66,6 +66,18 @@ export async function POST(request: Request) {
         movementType: 'delivery',
         reference: createdDelivery.id,
         createdAt: new Date(),
+      })
+
+      await tx.insert(auditLogs).values({
+        id: crypto.randomUUID(),
+        userId: user.id,
+        action: 'delivery',
+        entityType: 'stock_delivery',
+        entityId: createdDelivery.id,
+        reason: String(body.supplier ?? ''),
+        metadata: { quantity, productId, costPrice, deliveryDate: String(body.delivery_date ?? '') },
+        recordLabel: product.id,
+        approval: 'Recorded',
       })
 
       return createdDelivery
