@@ -54,3 +54,12 @@ def test_readiness_reports_database_outage():
     response = TestClient(app).get('/ready')
     assert response.status_code == 503
     assert response.json() == {'status': 'not_ready', 'reason': 'database_unavailable'}
+
+
+def test_user_identity_headers_are_not_authentication():
+    app = create_app(app_settings=Settings(database_url='postgresql://test', app_env='production'))
+    response = TestClient(app).get(
+        '/auth/me',
+        headers={'x-user-id': 'attacker', 'x-user-role': 'Admin'},
+    )
+    assert response.status_code == 401

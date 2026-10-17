@@ -55,16 +55,30 @@ The Drizzle schema in `lib/db/schema.ts` includes Better Auth tables plus:
 
 ## Local development
 
-Install dependencies and start the app:
+The Next.js app owns the UI, Better Auth session, and same-origin API proxy.
+FastAPI owns bar operations and is the only application service that writes
+operational records to PostgreSQL. The browser calls `/api/*` on Next.js; the
+server forwards those requests and the Better Auth session cookie to FastAPI.
+
+Install the web dependencies and start both services in separate terminals:
 
 ```bash
 pnpm install
 pnpm dev
 ```
 
+```bash
+python -m pip install -r backend/requirements.txt
+python -m uvicorn backend.app.main:app --reload --port 8000
+```
+
 Open [http://localhost:3000](http://localhost:3000).
 
-The application requires the project environment variables supplied by Vercel/Neon, including `DATABASE_URL` and `BETTER_AUTH_SECRET`. Do not commit secrets.
+Set `BACKEND_API_URL=http://localhost:8000` for the Next.js server. Configure
+`DATABASE_URL` and `BETTER_AUTH_SECRET` in the server environments for the
+services that need them. Apply the SQL files in `backend/migrations/` in numeric
+order to the shared PostgreSQL database before using the operational API. Keep
+all secret values out of source control.
 
 ## Verification
 

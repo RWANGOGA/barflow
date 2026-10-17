@@ -13,8 +13,9 @@ CREATE TABLE IF NOT EXISTS bar_login_attempts (
 CREATE INDEX IF NOT EXISTS bar_login_attempts_user_idx ON bar_login_attempts(user_id, attempted_at DESC);
 
 -- Make audit log immutable: no UPDATE/DELETE after insert (NF-09)
-CREATE OR REPLACE FUNCTION bar_guard_immutable_audit()
-RETURNS event_trigger AS $$
+DROP FUNCTION IF EXISTS bar_guard_immutable_audit() CASCADE;
+CREATE FUNCTION bar_guard_immutable_audit()
+RETURNS trigger AS $$
 BEGIN
     RAISE EXCEPTION 'Audit log records are immutable and cannot be modified or deleted.';
 END;
