@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
-from fastapi import Depends, Header, HTTPException, Request
+from fastapi import Depends, HTTPException, Request
 
 from .db import connection
 from .schemas import Role
@@ -74,28 +74,13 @@ async def _actor_from_session_token(token: str) -> RequestActor | None:
         return RequestActor(user_id=row['user_id'], role=role)
 
 
-async def get_actor(
-    request: Request,
-    x_user_id: str | None = Header(default=None),
-    x_user_role: Role | None = Header(default=None),
-) -> RequestActor:
-    """
-    Resolve the current actor.
-
-    Priority:
-    1. Better Auth session cookie (real verification)
-    2. Temporary x-user-id / x-user-role headers (kept for migration safety)
-    """
-    # 1. Try real Better Auth session cookie
+async def get_actor(request: Request) -> RequestActor:
+    """Resolve the current actor exclusively from a verified Better Auth session."""
     token = request.cookies.get(SESSION_COOKIE_NAME)
     if token:
         actor = await _actor_from_session_token(token)
         if actor:
             return actor
-
-    # 2. Temporary header fallback (to be removed later)
-    if x_user_id and x_user_role:
-        return RequestActor(user_id=x_user_id, role=x_user_role)
 
     raise HTTPException(status_code=401, detail="Authentication required.")
 
