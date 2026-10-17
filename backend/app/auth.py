@@ -65,11 +65,12 @@ async def _actor_from_session_token(token: str) -> RequestActor | None:
         if expires_at < datetime.now(timezone.utc):
             return None
 
-        role_value = row['role'] or 'Manager'
+        role_value = row['role']
         try:
             role = Role(role_value)
-        except ValueError:
-            role = Role.manager
+        except (TypeError, ValueError):
+            # An unknown or absent role must never receive Manager permissions.
+            return None
 
         return RequestActor(user_id=row['user_id'], role=role)
 
@@ -99,7 +100,12 @@ async def pin_sign_in(user_id: str, pin: str, ip_address: str | None = None) -> 
             raise HTTPException(status_code=403, detail='Invalid PIN.')
         await record_login_attempt(user_id, True, ip_address)
         role_row = await conn.fetchrow("SELECT role FROM bar_team_member WHERE user_id=$1", user_id)
-        role = Role(role_row['role']) if role_row else Role.manager
+        if not role_row:
+            raise HTTPException(status_code=403, detail='No role is configured for this user.')
+        try:
+            role = Role(role_row['role'])
+        except (TypeError, ValueError) as exc:
+            raise HTTPException(status_code=403, detail='The configured user role is invalid.') from exc
     return RequestActor(user_id=user_id, role=role)
 
 

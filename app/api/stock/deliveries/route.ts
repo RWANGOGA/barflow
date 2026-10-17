@@ -1,54 +1,79 @@
+import { and, desc, eq, sql } from 'drizzle-orm'
 import { NextResponse } from 'next/server'
-import { headers } from 'next/headers'
-import { auth } from '@/lib/auth'
+import { authErrorResponse, requirePermission } from '@/lib/permissions'
 import { db } from '@/lib/db'
 import { products, stockDeliveries, stockMovements } from '@/lib/db/schema'
-import { desc, eq, sql } from 'drizzle-orm'
-
-async function getUserId() {
-  const session = await auth.api.getSession({ headers: await headers() })
-  if (!session?.user) throw new Error('Unauthorized')
-  return session.user.id
-}
 
 export async function GET() {
   try {
-    const userId = await getUserId()
-    const rows = await db.select().from(stockDeliveries).where(eq(stockDeliveries.userId, userId)).orderBy(desc(stockDeliveries.deliveryDate))
+    const user = await requirePermission('inventory.manage')
+    const rows = await db
+      .select()
+      .from(stockDeliveries)
+      .where(eq(stockDeliveries.userId, user.id))
+      .orderBy(desc(stockDeliveries.deliveryDate))
+
     return NextResponse.json({ items: rows })
-  } catch {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  } catch (error) {
+    return authErrorResponse(error) ?? NextResponse.json({ error: 'Could not load deliveries' }, { status: 500 })
   }
 }
 
 export async function POST(request: Request) {
   try {
-    const userId = await getUserId()
+    const user = await requirePermission('inventory.manage')
     const body = await request.json()
-    const deliveryDate = String(body.delivery_date)
-    const delivery = await db.insert(stockDeliveries).values({
-      id: crypto.randomUUID(),
-      userId,
-      supplier: body.supplier,
-      productId: body.product_id,
-      quantity: Number(body.quantity),
-      costPrice: Number(body.cost_price),
-      deliveryDate,
-    }).returning()
-    await db.transaction(async (tx) => {
-      await tx.update(products).set({ stock: sql`${products.stock} + ${Number(body.quantity)}`, cost: Number(body.cost_price), updatedAt: new Date() }).where(eq(products.id, body.product_id))
+    const quantity = Number(body.quantity)
+    const costPrice = Number(body.cost_price)
+    const productId = String(body.product_id ?? '')
+
+    if (!Number.isInteger(quantity) || quantity <= 0 || !Number.isFinite(costPrice) || costPrice < 0) {
+      return NextResponse.json({ error: 'Invalid delivery values' }, { status: 400 })
+    }
+
+    const delivery = await db.transaction(async (tx) => {
+      const [product] = await tx
+        .select({ id: products.id })
+        .from(products)
+        .where(and(eq(products.id, productId), eq(products.userId, user.id)))
+        .limit(1)
+
+      if (!product) return null
+
+      const [createdDelivery] = await tx
+        .insert(stockDeliveries)
+        .values({
+          id: crypto.randomUUID(),
+          userId: user.id,
+          supplier: String(body.supplier ?? ''),
+          productId: product.id,
+          quantity,
+          costPrice,
+          deliveryDate: String(body.delivery_date ?? ''),
+        })
+        .returning()
+
+      await tx
+        .update(products)
+        .set({ stock: sql`${products.stock} + ${quantity}`, cost: costPrice, updatedAt: new Date() })
+        .where(and(eq(products.id, product.id), eq(products.userId, user.id)))
+
       await tx.insert(stockMovements).values({
         id: crypto.randomUUID(),
-        userId,
-        productId: body.product_id,
-        quantity: Number(body.quantity),
+        userId: user.id,
+        productId: product.id,
+        quantity,
         movementType: 'delivery',
-        reference: delivery[0].id,
+        reference: createdDelivery.id,
         createdAt: new Date(),
       })
+
+      return createdDelivery
     })
-    return NextResponse.json(delivery[0], { status: 201 })
-  } catch {
-    return NextResponse.json({ error: 'Could not save delivery' }, { status: 400 })
+
+    if (!delivery) return NextResponse.json({ error: 'Product not found' }, { status: 404 })
+    return NextResponse.json(delivery, { status: 201 })
+  } catch (error) {
+    return authErrorResponse(error) ?? NextResponse.json({ error: 'Could not save delivery' }, { status: 400 })
   }
 }

@@ -1,0 +1,12 @@
+ALTER TABLE "bar_discount" ADD CONSTRAINT "bar_discount_user_id_user_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."user"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "bar_discount" ADD CONSTRAINT "bar_discount_sale_id_bar_sale_id_fk" FOREIGN KEY ("sale_id") REFERENCES "public"."bar_sale"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "bar_product" ADD CONSTRAINT "bar_product_user_id_user_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."user"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "bar_receipts" ADD CONSTRAINT "bar_receipts_user_id_user_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."user"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "bar_receipts" ADD CONSTRAINT "bar_receipts_sale_id_bar_sale_id_fk" FOREIGN KEY ("sale_id") REFERENCES "public"."bar_sale"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "bar_receipts" ADD CONSTRAINT "bar_receipts_copy_of_bar_receipts_id_fk" FOREIGN KEY ("copy_of") REFERENCES "public"."bar_receipts"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "bar_sale_item" ADD CONSTRAINT "bar_sale_item_user_id_user_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."user"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "bar_sale_item" ADD CONSTRAINT "bar_sale_item_sale_id_bar_sale_id_fk" FOREIGN KEY ("sale_id") REFERENCES "public"."bar_sale"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "bar_sale_item" ADD CONSTRAINT "bar_sale_item_product_id_bar_product_id_fk" FOREIGN KEY ("product_id") REFERENCES "public"."bar_product"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "bar_sale_payment" ADD CONSTRAINT "bar_sale_payment_user_id_user_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."user"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "bar_sale_payment" ADD CONSTRAINT "bar_sale_payment_sale_id_bar_sale_id_fk" FOREIGN KEY ("sale_id") REFERENCES "public"."bar_sale"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "bar_sale" ADD CONSTRAINT "bar_sale_user_id_user_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."user"("id") ON DELETE no action ON UPDATE no action;

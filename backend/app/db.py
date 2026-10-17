@@ -16,7 +16,13 @@ async def get_pool() -> Any:
             import asyncpg
         except ImportError as exc:
             raise RuntimeError('Install backend requirements before using database access') from exc
-        _pool = await asyncpg.create_pool(settings.database_url, min_size=1, max_size=5)
+        # Disable prepared statement caching for Neon pooled/PgBouncer transaction URLs.
+        _pool = await asyncpg.create_pool(
+            settings.database_url,
+            min_size=1,
+            max_size=5,
+            statement_cache_size=0,
+        )
     return _pool
 
 

@@ -1,0 +1,43 @@
+name: Apply Neon migrations
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: neon-schema-migrations
+  cancel-in-progress: false
+
+jobs:
+  migrate:
+    name: Apply reviewed Drizzle migrations
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      NEON_MIGRATION_DATABASE_URL: ${{ secrets.NEON_MIGRATION_DATABASE_URL }}
+    steps:
+      - name: Require Neon credential
+        shell: bash
+        run: |
+          if [[ -z "$NEON_MIGRATION_DATABASE_URL" ]]; then
+            echo "Missing GitHub Actions secret NEON_MIGRATION_DATABASE_URL" >&2
+            exit 1
+          fi
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12.3.4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Type-check database scripts
+        run: pnpm db:typecheck
+      - name: Apply committed migrations
+        run: pnpm db:migrate

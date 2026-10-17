@@ -2,5 +2,10 @@ import { drizzle } from 'drizzle-orm/node-postgres'
 import { Pool } from 'pg'
 import * as schema from './schema'
 
-export const pool = new Pool({ connectionString: process.env.DATABASE_URL })
+const connectionString = process.env.DATABASE_URL?.trim()
+if (!connectionString) {
+  throw new Error('DATABASE_URL is required to connect the application to Neon Postgres.')
+}
+
+export const pool = new Pool({ connectionString, max: 10 })
 export const db = drizzle(pool, { schema })

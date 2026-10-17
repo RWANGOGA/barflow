@@ -64,11 +64,43 @@ pnpm dev
 
 Open [http://localhost:3000](http://localhost:3000).
 
-The application requires the project environment variables supplied by Vercel/Neon, including `DATABASE_URL` and `BETTER_AUTH_SECRET`. Do not commit secrets.
+### Required environment variables
+
+Copy `.env.example` to `.env.local`, then replace the placeholders:
+
+- `BETTER_AUTH_URL`: the app origin (`http://localhost:3000` for local development; the canonical HTTPS origin in production). For Vercel, set the correct URL in each deployment environment.
+- `BETTER_AUTH_SECRET`: a private random secret of at least 32 characters. Generate one with `openssl rand -base64 32`.
+- `DATABASE_URL`: the private Neon pooled PostgreSQL connection for Next.js and FastAPI runtime. Set the same value in Vercel and Render.
+- `NEON_MIGRATION_DATABASE_URL`: optional direct Neon connection for local migrations; GitHub Actions uses the repository secret of the same name.
+- `NEXT_PUBLIC_BACKEND_URL`: the FastAPI backend origin.
+
+Set `BETTER_AUTH_URL` and `BETTER_AUTH_SECRET` in every Vercel environment that builds or runs the app. The auth module fails fast with a clear configuration error if either value is missing; there is no service-role-key fallback. Never commit `.env.local` or production secrets.
+
+New self-registered accounts receive the `Cashier` role, the least-privileged role supported by RBAC. The first owner account is promoted by the one-time token-gated `pnpm db:admin` CLI below; no direct SQL is required.
+
+The new Neon baseline in `drizzle/migrations/` includes the `Cashier` default. Existing `backend/migrations/` and `supabase/migrations/` directories are historical and are not replayed against Neon.
+
+### Neon migrations and deployment
+
+- Generate and review a migration locally with `pnpm db:generate`.
+- Check the target connection with `pnpm db:check`.
+- Apply locally with `pnpm db:migrate`; the initial baseline refuses to run if public tables already exist without Drizzle migration history.
+- The GitHub Actions workflow `.github/workflows/neon-migrate.yml` applies committed migrations automatically on pushes to `main`. Configure repository secret `NEON_MIGRATION_DATABASE_URL` with the Neon **direct** connection string before pushing migration changes. The job does not print the secret; it fails closed if the secret is missing.
+- Set `DATABASE_URL` in both the Vercel (Next.js) and Render (FastAPI) environments to the same Neon **pooled** runtime connection string. The FastAPI asyncpg pool disables prepared-statement caching for PgBouncer transaction pooling.
+- Do not use `drizzle-kit push`; the checked-in migration history is the reviewed deployment source.
+
+### One-time first Admin provisioning
+
+1. Create the owner account through the normal sign-up flow; new accounts have the `Cashier` role.
+2. Generate a 32-byte one-time token with `pnpm db:token -- --email=owner@example.com`. It expires in 15 minutes. Store the raw token securely; set its printed email, SHA-256 digest, and expiry in local `ADMIN_PROVISIONING_EMAIL`, `ADMIN_PROVISIONING_TOKEN_HASH`, and `ADMIN_PROVISIONING_TOKEN_EXPIRES_AT`.
+3. Run `pnpm db:admin -- --email=owner@example.com` from an interactive terminal. Enter the token when prompted; input is hidden. The command promotes only that existing Cashier, refuses if any Admin exists, enforces single-use in the database, and writes an audit event transactionally.
+4. Remove all three temporary `ADMIN_PROVISIONING_*` values from `.env.local` after success. The raw token is never stored in the database.
+
+Provisioning uses the same Neon database connection and never creates or handles a password. It is intended only for the first owner account; subsequent role changes remain subject to the established RBAC and administrative process. This bootstrap CLI stores only a token hash and marks each token consumed transactionally.
 
 ## Verification
 
-Run the production build before merging or deploying:
+Run the production build with the required environment variables configured before merging or deploying:
 
 ```bash
 pnpm build

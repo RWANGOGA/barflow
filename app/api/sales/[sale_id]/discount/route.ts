@@ -1,43 +1,50 @@
+import { eq } from 'drizzle-orm'
 import { NextResponse } from 'next/server'
-import { headers } from 'next/headers'
-import { auth } from '@/lib/auth'
+import { authErrorResponse, requirePermission, verifyUserPin } from '@/lib/permissions'
 import { db } from '@/lib/db'
 import { discounts, sales } from '@/lib/db/schema'
-import { eq } from 'drizzle-orm'
-
-async function getUserId() {
-  const session = await auth.api.getSession({ headers: await headers() })
-  if (!session?.user) throw new Error('Unauthorized')
-  return session.user.id
-}
 
 export async function POST(
   request: Request,
-  { params }: { params: Promise<{ sale_id: string }> }
+  { params }: { params: Promise<{ sale_id: string }> },
 ) {
   try {
-    const userId = await getUserId()
+    const user = await requirePermission('sales.void')
     const { sale_id } = await params
     const body = await request.json()
-    const { amount, reason, pin } = body
-    if (!amount || amount <= 0) return NextResponse.json({ error: 'Invalid discount amount' }, { status: 400 })
-    if (!reason || reason.length < 3) return NextResponse.json({ error: 'Invalid discount reason' }, { status: 400 })
+    const amount = Number(body.amount)
+    const reason = typeof body.reason === 'string' ? body.reason.trim() : ''
 
-    const sale = await db.select().from(sales).where(eq(sales.id, sale_id)).limit(1)
-    if (!sale[0] || sale[0].userId !== userId) return NextResponse.json({ error: 'Sale not found' }, { status: 404 })
+    if (!Number.isInteger(amount) || amount <= 0 || reason.length < 3) {
+      return NextResponse.json({ error: 'Invalid discount amount or reason' }, { status: 400 })
+    }
+    if (user.role !== 'Admin' && !(await verifyUserPin(user.id, body.pin))) {
+      return NextResponse.json({ error: 'Manager PIN is invalid' }, { status: 403 })
+    }
 
-    // PIN verification would be handled by the frontend before calling this
-    const discount = await db.insert(discounts).values({
-      id: crypto.randomUUID(),
-      userId,
-      saleId: sale_id,
-      amount,
-      reason,
-      approvedBy: userId,
-    }).returning()
+    const [sale] = await db
+      .select({ id: sales.id, userId: sales.userId, total: sales.total })
+      .from(sales)
+      .where(eq(sales.id, sale_id))
+      .limit(1)
+    if (!sale || sale.userId !== user.id) return NextResponse.json({ error: 'Sale not found' }, { status: 404 })
+    if (amount > sale.total) return NextResponse.json({ error: 'Discount exceeds sale total' }, { status: 400 })
 
-    return NextResponse.json(discount[0])
-  } catch {
-    return NextResponse.json({ error: 'Could not apply discount' }, { status: 400 })
+    const [discount] = await db
+      .insert(discounts)
+      .values({
+        id: crypto.randomUUID(),
+        userId: user.id,
+        saleId: sale_id,
+        amount,
+        reason,
+        approvedBy: user.id,
+        approvedAt: new Date(),
+      })
+      .returning()
+
+    return NextResponse.json(discount, { status: 201 })
+  } catch (error) {
+    return authErrorResponse(error) ?? NextResponse.json({ error: 'Could not apply discount' }, { status: 400 })
   }
 }

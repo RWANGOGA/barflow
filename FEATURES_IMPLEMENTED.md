@@ -174,7 +174,7 @@ All operational tables carry a `user_id` owner. Server routes retrieve the Bette
 
 - Direct ESC/POS thermal printing requires a printer bridge or network printer service; browser print remains the current fallback.
 - Advanced physical counts, wastage workflows, mixed payments, tax rules, offline sync, and backup/restore should receive dedicated backend records before production rollout.
-- Role claims should be populated by the account-management flow for each staff user; the dashboard safely falls back to Manager when a session has no role claim.
+- Self-registered accounts default to the least-privileged supported role, Cashier. Unknown or missing database roles are denied by server-side RBAC; promote the initial owner with the one-time token-gated `pnpm db:admin` CLI.
 
 ## Files that define the implementation
 

@@ -1,0 +1,11 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "incremental": false
+  },
+  "include": ["drizzle.config.ts", "scripts/**/*.ts", "lib/db/**/*.ts"],
+  "exclude": ["node_modules", ".next"]
+}
