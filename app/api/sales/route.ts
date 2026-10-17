@@ -26,8 +26,12 @@ export async function POST(request: Request) {
     const userId = await getUserId()
     const body = await request.json()
     const requestedItems = Array.isArray(body.items) ? body.items.slice(0, 100).map((item: any) => ({ productId: String(item.productId), quantity: Number(item.quantity), note: item.note ? String(item.note) : null })) : []
-    const requestedPayments = Array.isArray(body.payment_items) ? body.payment_items.slice(0, 10).map((pi: any) => ({ method: String(pi.method), amount: Number(pi.amount) })) : null
+    const normalisePayment = (value: unknown) => String(value).trim().toLowerCase().replaceAll(' ', '_')
+    const requestedPayments = Array.isArray(body.payment_items) ? body.payment_items.slice(0, 10).map((pi: any) => ({ method: normalisePayment(pi.method), amount: Number(pi.amount) })) : null
+    const paymentMethod = normalisePayment(body.paymentMethod)
+    const allowedPayments = new Set(['cash', 'mobile_money', 'card'])
     const tenderedAmount = body.tendered_amount != null ? Number(body.tendered_amount) : null
+    if (!allowedPayments.has(paymentMethod)) return NextResponse.json({ error: 'Invalid payment method' }, { status: 400 })
     if (requestedItems.length === 0 || requestedItems.some((item: any) => !item.productId || !Number.isInteger(item.quantity) || item.quantity <= 0)) return NextResponse.json({ error: 'Invalid sale items' }, { status: 400 })
     const catalog = await db.select().from(products).where(eq(products.userId, userId))
     const items = requestedItems.map((item: any) => { const product = catalog.find(row => row.id === item.productId); if (!product || item.quantity > product.stock) throw new Error('Insufficient stock'); return { productId: product.id, name: product.name, category: product.category, quantity: item.quantity, price: product.price, lineTotal: product.price * item.quantity, note: item.note } })
@@ -36,13 +40,14 @@ export async function POST(request: Request) {
     let changeDue = 0
     let paymentItems = requestedPayments
     if (!paymentItems) {
-      paymentItems = [{ method: String(body.paymentMethod), amount: total }]
+      paymentItems = [{ method: paymentMethod, amount: total }]
     } else {
       const paid = paymentItems.reduce((s: number, pi: any) => s + pi.amount, 0)
       if (paid !== total) return NextResponse.json({ error: 'Payment items do not add up to the sale total' }, { status: 400 })
     }
     if (tenderedAmount != null) changeDue = Math.max(0, tenderedAmount - total)
-    const sale = { id: crypto.randomUUID(), userId, paymentMethod: String(body.paymentMethod), total, tableLabel: body.tableLabel ? String(body.tableLabel) : null, status: 'completed', tenderedAmount, changeDue }
+    if (paymentItems.some((item: any) => !allowedPayments.has(item.method) || !Number.isInteger(item.amount) || item.amount <= 0)) return NextResponse.json({ error: 'Invalid payment details' }, { status: 400 })
+    const sale = { id: crypto.randomUUID(), userId, paymentMethod, total, tableLabel: body.tableLabel ? String(body.tableLabel) : null, status: 'completed', tenderedAmount, changeDue }
     let receiptNumber = 0
     await db.transaction(async (tx) => {
       await tx.insert(sales).values(sale)
