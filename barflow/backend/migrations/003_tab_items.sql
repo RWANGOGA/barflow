@@ -1,0 +1,2 @@
+CREATE TABLE IF NOT EXISTS bar_tab_item (id text PRIMARY KEY, tab_id text NOT NULL REFERENCES bar_tab(id), user_id text NOT NULL, product_id text NOT NULL REFERENCES bar_product(id), quantity integer NOT NULL CHECK (quantity > 0), unit_price integer NOT NULL CHECK (unit_price >= 0), line_total integer NOT NULL CHECK (line_total >= 0), created_at timestamptz NOT NULL DEFAULT now());
+CREATE INDEX IF NOT EXISTS bar_tab_item_user_tab_idx ON bar_tab_item(user_id, tab_id);
