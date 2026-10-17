@@ -2,6 +2,7 @@ import { betterAuth } from 'better-auth'
 import { pool } from '@/lib/db'
 
 export const auth = betterAuth({
+  secret: process.env.BETTER_AUTH_SECRET ?? process.env.SUPABASE_SERVICE_ROLE_KEY,
   database: pool,
   baseURL:
     process.env.BETTER_AUTH_URL ??
