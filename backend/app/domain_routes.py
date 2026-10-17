@@ -37,7 +37,7 @@ async def create_sale(payload: SaleCreate, actor: RequestActor = Depends(get_act
             total = 0
             products = []
             for item in payload.items:
-                product = await conn.fetchrow('SELECT id, price, stock FROM bar_product WHERE user_id = $1 AND id = $2 FOR UPDATE', actor.user_id, item.product_id)
+                product = await conn.fetchrow('SELECT id, name, category, price, stock FROM bar_product WHERE user_id = $1 AND id = $2 FOR UPDATE', actor.user_id, item.product_id)
                 if not product:
                     raise HTTPException(status_code=404, detail=f'Product {item.product_id} was not found.')
                 if product['stock'] < item.quantity:
@@ -58,7 +58,7 @@ async def create_sale(payload: SaleCreate, actor: RequestActor = Depends(get_act
             for pi in payment_items:
                 await conn.execute('INSERT INTO bar_sale_payment (id, user_id, sale_id, method, amount) VALUES ($1,$2,$3,$4,$5)', str(uuid4()), actor.user_id, sale_id, pi.method.value if hasattr(pi, 'method') else pi['method'], pi.amount if hasattr(pi, 'amount') else pi['amount'])
             for item, product in products:
-                await conn.execute('INSERT INTO bar_sale_item (id, sale_id, product_id, quantity, unit_price, line_total, note) VALUES ($1,$2,$3,$4,$5,$6,$7)', str(uuid4()), sale_id, item.product_id, item.quantity, product['price'], product['price'] * item.quantity, item.note)
+                await conn.execute('INSERT INTO bar_sale_item (id, user_id, sale_id, product_id, product_name, category, quantity, unit_price, line_total, note) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)', str(uuid4()), actor.user_id, sale_id, item.product_id, product['name'] if 'name' in product else 'Unknown', product['category'] if 'category' in product else 'Unknown', item.quantity, product['price'], product['price'] * item.quantity, item.note)
                 await conn.execute('UPDATE bar_product SET stock = stock - $1, updated_at = now() WHERE user_id = $2 AND id = $3', item.quantity, actor.user_id, item.product_id)
                 await conn.execute('INSERT INTO bar_stock_movement (id,user_id,product_id,quantity,movement_type,reference) VALUES ($1,$2,$3,$4,$5,$6)', str(uuid4()), actor.user_id, item.product_id, -item.quantity, 'sale', sale_id)
             receipt_row = await conn.fetchrow('INSERT INTO bar_receipt_counter (user_id, next_number) VALUES ($1, 1) ON CONFLICT (user_id) DO UPDATE SET next_number = bar_receipt_counter.next_number + 1 RETURNING next_number', actor.user_id)
@@ -297,13 +297,14 @@ async def settle_tab(tab_id: str, payload: TabSettle, actor: RequestActor = Depe
             if not items:
                 raise HTTPException(status_code=409, detail='Cannot settle an empty tab.')
             for item in items:
-                product = await conn.fetchrow('SELECT id, stock FROM bar_product WHERE id=$1 AND user_id=$2 FOR UPDATE', item['product_id'], actor.user_id)
+                product = await conn.fetchrow('SELECT id, name, category, stock FROM bar_product WHERE id=$1 AND user_id=$2 FOR UPDATE', item['product_id'], actor.user_id)
                 if not product or product['stock'] < item['quantity']:
                     raise HTTPException(status_code=409, detail=f'Insufficient stock for product {item["product_id"]}.')
             sale_id = str(uuid4())
             await conn.execute('INSERT INTO bar_sale (id,user_id,payment_method,total,table_label,idempotency_key) VALUES ($1,$2,$3,$4,$5,$6)', sale_id, actor.user_id, payload.payment_method.value, tab['total'], tab['table_label'], payload.idempotency_key)
             for item in items:
-                await conn.execute('INSERT INTO bar_sale_item (id,sale_id,product_id,quantity,unit_price,line_total) VALUES ($1,$2,$3,$4,$5,$6)', str(uuid4()), sale_id, item['product_id'], item['quantity'], item['unit_price'], item['line_total'])
+                product = await conn.fetchrow('SELECT name, category FROM bar_product WHERE id=$1 AND user_id=$2', item['product_id'], actor.user_id)
+                await conn.execute('INSERT INTO bar_sale_item (id,user_id,sale_id,product_id,product_name,category,quantity,unit_price,line_total) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)', str(uuid4()), actor.user_id, sale_id, item['product_id'], product['name'] if product else 'Unknown', product['category'] if product else 'Unknown', item['quantity'], item['unit_price'], item['line_total'])
                 await conn.execute('UPDATE bar_product SET stock=stock-$1, updated_at=now() WHERE id=$2 AND user_id=$3', item['quantity'], item['product_id'], actor.user_id)
                 await conn.execute('INSERT INTO bar_stock_movement (id,user_id,product_id,quantity,movement_type,reference) VALUES ($1,$2,$3,$4,$5,$6)', str(uuid4()), actor.user_id, item['product_id'], -item['quantity'], 'sale', sale_id)
             response = {'tab_id': tab_id, 'sale_id': sale_id, 'total': tab['total'], 'payment_method': payload.payment_method.value, 'status': 'settled'}
