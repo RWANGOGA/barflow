@@ -54,7 +54,9 @@ export async function POST(request: Request) {
       await tx.insert(receipts).values({ id: crypto.randomUUID(), userId, saleId: sale.id, receiptNumber, isCopy: false, printedBy: userId })
     })
     return NextResponse.json({ ...sale, receiptNumber, changeDue, paymentItems })
-  } catch {
-    return NextResponse.json({ error: 'Could not save sale' }, { status: 400 })
+  } catch (error) {
+    if (error instanceof Error && error.message === 'Unauthorized') return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    console.error('Sale creation failed', error)
+    return NextResponse.json({ error: error instanceof Error ? error.message : 'Could not save sale' }, { status: 400 })
   }
 }
