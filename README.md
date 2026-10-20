@@ -102,6 +102,8 @@ pnpm backend:dev    # FastAPI on http://127.0.0.1:8000 against the same database
 
 `pnpm db:schema` exits non-zero when the connected database is missing a table or column the running app reads, and `--sql` prints the `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` statements to reconcile it. Run it against Neon after every deploy that touches `lib/db/schema.ts`. A `Failed query: select ...` toast is usually this drift; the API now returns the underlying Postgres message instead.
 
+`pnpm db:reconcile` regenerates `drizzle/adopt/reconcile-existing-database.sql` from `lib/db/schema.ts`. That file is idempotent and never drops data, so it can be pasted into the Neon SQL editor when a database was provisioned before the migration ledger existed.
+
 `pnpm db:info` never prints the password, and `pnpm db:seed` refuses to run against a non-local host unless `--allow-remote` is passed. Inspect the data directly with `docker exec -it barflow-postgres psql -U postgres -d barflow_dev`, then `\dt` for tables and `\d bar_sale` for one table's columns.
 
 Local `BACKEND_URL` must be `http://127.0.0.1:8000`. The browser calls the same-origin `/api/backend` proxy, which forwards the session cookie, so Next.js and FastAPI must share one database for authenticated calls to succeed. Sign up once, give that account the `Admin` role, and run `pnpm db:seed`.
