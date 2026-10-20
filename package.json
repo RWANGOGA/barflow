@@ -12,7 +12,7 @@
     "db:check": "tsx scripts/check-neon.ts",
     "db:info": "tsx scripts/db-info.ts",
     "db:seed": "tsx scripts/seed-local.ts",
-    "backend:dev": "python3 -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000 --app-dir backend",
+    "backend:dev": "python3 -m uvicorn app.main:app --reload --reload-dir backend --host 127.0.0.1 --port 8000 --app-dir backend",
     "db:typecheck": "tsc --noEmit -p tsconfig.scripts.json",
     "db:token": "tsx scripts/make-admin-token.ts",
     "db:admin": "tsx scripts/provision-admin.ts"
