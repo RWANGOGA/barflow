@@ -85,6 +85,7 @@ export async function POST(request: Request) {
       if (cashVariance !== 0 && reason.length < 3) {
         return NextResponse.json({ error: 'A variance reason is required when counted cash does not match expected cash.' }, { status: 400 })
       }
+      const closedAt = new Date()
       await db.update(tradingDays).set({
         status: 'closed',
         countedCash,
@@ -93,7 +94,7 @@ export async function POST(request: Request) {
         varianceReason: reason || null,
         varianceAccepted: true,
         locked: true,
-        closedAt: new Date(),
+        closedAt,
       }).where(and(eq(tradingDays.id, existing[0].id), eq(tradingDays.userId, userId)))
 
       await db.insert(auditLogs).values({
@@ -108,7 +109,7 @@ export async function POST(request: Request) {
         metadata: { countedCash, expectedCash, cashVariance },
       })
 
-      return NextResponse.json({ ...existing[0], status: 'closed', countedCash, expectedCash, cashVariance, locked: true })
+      return NextResponse.json({ ...existing[0], status: 'closed', countedCash, expectedCash, cashVariance, varianceReason: reason || null, varianceAccepted: true, locked: true, closedAt })
     }
 
     return NextResponse.json({ error: 'Invalid day action' }, { status: 400 })
