@@ -1,6 +1,7 @@
 import { and, eq, gte } from 'drizzle-orm'
 import { NextResponse } from 'next/server'
 import { authErrorResponse, requireAuth, requirePermission } from '@/lib/permissions'
+import { databaseErrorResponse } from '@/lib/db-errors'
 import { db } from '@/lib/db'
 import { auditLogs, salePayments, sales, tabs, tradingDays } from '@/lib/db/schema'
 
@@ -40,7 +41,7 @@ export async function GET() {
     const { id, userId, businessDate, status, openedAt, closedAt, locked } = existing[0]
     return NextResponse.json({ id, userId, businessDate, status, openedAt, closedAt, locked })
   } catch (error) {
-    return authErrorResponse(error) ?? NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    return authErrorResponse(error) ?? databaseErrorResponse(error) ?? NextResponse.json({ error: 'Could not load the trading day' }, { status: 500 })
   }
 }
 
@@ -112,6 +113,6 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ error: 'Invalid day action' }, { status: 400 })
   } catch (error) {
-    return authErrorResponse(error) ?? NextResponse.json({ error: 'Could not save trading day' }, { status: 400 })
+    return authErrorResponse(error) ?? databaseErrorResponse(error) ?? NextResponse.json({ error: 'Could not save trading day' }, { status: 400 })
   }
 }

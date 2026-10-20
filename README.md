@@ -95,9 +95,12 @@ Point `DATABASE_URL` and `NEON_MIGRATION_DATABASE_URL` at that database, then:
 ```bash
 pnpm db:migrate     # apply drizzle/migrations to the local database
 pnpm db:info        # target, TLS, row count per table, applied migrations
+pnpm db:schema      # compare the live columns with lib/db/schema.ts
 pnpm db:seed        # demo catalogue, roster, and settings for the first Admin
 pnpm backend:dev    # FastAPI on http://127.0.0.1:8000 against the same database
 ```
+
+`pnpm db:schema` exits non-zero when the connected database is missing a table or column the running app reads, and `--sql` prints the `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` statements to reconcile it. Run it against Neon after every deploy that touches `lib/db/schema.ts`. A `Failed query: select ...` toast is usually this drift; the API now returns the underlying Postgres message instead.
 
 `pnpm db:info` never prints the password, and `pnpm db:seed` refuses to run against a non-local host unless `--allow-remote` is passed. Inspect the data directly with `docker exec -it barflow-postgres psql -U postgres -d barflow_dev`, then `\dt` for tables and `\d bar_sale` for one table's columns.
 

@@ -41,3 +41,5 @@ jobs:
         run: pnpm db:typecheck
       - name: Apply committed migrations
         run: pnpm db:migrate
+      - name: Verify the Neon schema matches the app
+        run: pnpm db:schema

@@ -1,6 +1,7 @@
 import { and, desc, eq, sql } from 'drizzle-orm'
 import { NextResponse } from 'next/server'
 import { authErrorResponse, requirePermission } from '@/lib/permissions'
+import { databaseErrorResponse } from '@/lib/db-errors'
 import { db } from '@/lib/db'
 import { products, stockMovements, stockTransfers, auditLogs } from '@/lib/db/schema'
 
@@ -25,24 +26,30 @@ export async function POST(request: Request) {
     const body = await request.json()
     const quantity = Number(body.quantity)
     const productId = String(body.product_id ?? '')
-    const fromLocation = String(body.from_location ?? '')
-    const toLocation = String(body.to_location ?? '')
+    const fromLocation = String(body.from_location ?? '').trim().slice(0, 40)
+    const toLocation = String(body.to_location ?? '').trim().slice(0, 40)
 
     if (!Number.isInteger(quantity) || quantity <= 0) {
       return NextResponse.json({ error: 'Invalid transfer values' }, { status: 400 })
     }
+    if (!fromLocation || !toLocation) {
+      return NextResponse.json({ error: 'Choose both a source and a destination' }, { status: 400 })
+    }
+    if (fromLocation === toLocation) {
+      return NextResponse.json({ error: 'Choose two different locations' }, { status: 400 })
+    }
 
-    const transfer = await db.transaction(async (tx) => {
+    const outcome = await db.transaction(async (tx) => {
       const [product] = await tx
         .select({ id: products.id, name: products.name, stock: products.stock })
         .from(products)
         .where(and(eq(products.id, productId), eq(products.userId, user.id)))
         .limit(1)
 
-      if (!product) return null
+      if (!product) return { kind: 'missing' as const }
 
       if (fromLocation === 'Main' && product.stock < quantity) {
-        return null
+        return { kind: 'insufficient' as const, available: product.stock }
       }
 
       const [createdTransfer] = await tx
@@ -58,26 +65,28 @@ export async function POST(request: Request) {
         })
         .returning()
 
-      if (fromLocation === 'Main') {
+      // Only Main is backed by bar_product.stock, so only a transfer touching Main changes the
+      // inventory or belongs in the movement ledger. Store-to-Bar moves are recorded elsewhere.
+      if (fromLocation === 'Main' || toLocation === 'Main') {
         await tx
           .update(products)
-          .set({ stock: sql`${products.stock} - ${quantity}`, updatedAt: new Date() })
+          .set({
+            stock: fromLocation === 'Main'
+              ? sql`${products.stock} - ${quantity}`
+              : sql`${products.stock} + ${quantity}`,
+            updatedAt: new Date(),
+          })
           .where(and(eq(products.id, product.id), eq(products.userId, user.id)))
-      } else if (toLocation === 'Main') {
-        await tx
-          .update(products)
-          .set({ stock: sql`${products.stock} + ${quantity}`, updatedAt: new Date() })
-          .where(and(eq(products.id, product.id), eq(products.userId, user.id)))
-      }
 
-      await tx.insert(stockMovements).values({
-        id: crypto.randomUUID(),
-        userId: user.id,
-        productId: product.id,
-        quantity: fromLocation === 'Main' ? -quantity : quantity,
-        movementType: 'transfer',
-        reference: createdTransfer.id,
-      })
+        await tx.insert(stockMovements).values({
+          id: crypto.randomUUID(),
+          userId: user.id,
+          productId: product.id,
+          quantity: fromLocation === 'Main' ? -quantity : quantity,
+          movementType: 'transfer',
+          reference: createdTransfer.id,
+        })
+      }
 
       await tx.insert(auditLogs).values({
         id: crypto.randomUUID(),
@@ -91,12 +100,20 @@ export async function POST(request: Request) {
         approval: 'Recorded',
       })
 
-      return createdTransfer
+      return { kind: 'created' as const, transfer: createdTransfer }
     })
 
-    if (!transfer) return NextResponse.json({ error: 'Transfer failed' }, { status: 400 })
-    return NextResponse.json(transfer, { status: 201 })
+    if (outcome.kind === 'missing') {
+      return NextResponse.json({ error: 'Product was not found' }, { status: 404 })
+    }
+    if (outcome.kind === 'insufficient') {
+      return NextResponse.json(
+        { error: `Only ${outcome.available} on hand in Main` },
+        { status: 409 },
+      )
+    }
+    return NextResponse.json(outcome.transfer, { status: 201 })
   } catch (error) {
-    return authErrorResponse(error) ?? NextResponse.json({ error: 'Could not save transfer' }, { status: 400 })
+    return authErrorResponse(error) ?? databaseErrorResponse(error) ?? NextResponse.json({ error: 'Could not save transfer' }, { status: 400 })
   }
 }

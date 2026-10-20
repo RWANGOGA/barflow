@@ -1,6 +1,7 @@
 import { and, desc, eq, sql } from 'drizzle-orm'
 import { NextResponse } from 'next/server'
 import { authErrorResponse, requirePermission, verifyUserPin } from '@/lib/permissions'
+import { databaseErrorResponse } from '@/lib/db-errors'
 import { DAY_LOCKED_ERROR, isDayLocked } from '@/lib/day'
 import { db } from '@/lib/db'
 import {
@@ -191,7 +192,7 @@ export async function PATCH(request: Request) {
     const body = await request.json().catch(() => ({}))
     return voidRequested ? await voidTab(user, id, body) : await settleTab(user, id, body)
   } catch (error) {
-    return authErrorResponse(error) ?? NextResponse.json({ error: 'Could not update tab' }, { status: 400 })
+    return authErrorResponse(error) ?? databaseErrorResponse(error) ?? NextResponse.json({ error: 'Could not update tab' }, { status: 400 })
   }
 }
 
@@ -253,6 +254,6 @@ export async function POST(request: Request) {
     if (error instanceof Error && /^Insufficient stock|^Product not found/.test(error.message)) {
       return NextResponse.json({ error: error.message }, { status: 400 })
     }
-    return NextResponse.json({ error: 'Could not create tab' }, { status: 400 })
+    return databaseErrorResponse(error) ?? NextResponse.json({ error: 'Could not create tab' }, { status: 400 })
   }
 }

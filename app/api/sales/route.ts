@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto'
 import { and, desc, eq, sql } from 'drizzle-orm'
 import { NextResponse } from 'next/server'
 import { authErrorResponse, requirePermission } from '@/lib/permissions'
+import { databaseErrorResponse } from '@/lib/db-errors'
 import { DAY_LOCKED_ERROR, isDayLocked } from '@/lib/day'
 import { db } from '@/lib/db'
 import { idempotencyKeys, products, receiptCounter, receipts, saleItems, salePayments, sales, stockMovements } from '@/lib/db/schema'
@@ -119,6 +120,6 @@ export async function POST(request: Request) {
     const authResponse = authErrorResponse(error)
     if (authResponse) return authResponse
     console.error('Sale creation failed', error)
-    return NextResponse.json({ error: error instanceof Error ? error.message : 'Could not save sale' }, { status: 400 })
+    return databaseErrorResponse(error) ?? NextResponse.json({ error: error instanceof Error ? error.message : 'Could not save sale' }, { status: 400 })
   }
 }

@@ -11,6 +11,7 @@
     "db:migrate": "tsx scripts/migrate-neon.ts",
     "db:check": "tsx scripts/check-neon.ts",
     "db:info": "tsx scripts/db-info.ts",
+    "db:schema": "tsx scripts/db-schema.ts",
     "db:seed": "tsx scripts/seed-local.ts",
     "backend:dev": "python3 -m uvicorn app.main:app --reload --reload-dir backend --host 127.0.0.1 --port 8000 --app-dir backend",
     "db:typecheck": "tsc --noEmit -p tsconfig.scripts.json",
