@@ -1,6 +1,7 @@
 import { and, desc, eq, sql } from 'drizzle-orm'
 import { NextResponse } from 'next/server'
 import { authErrorResponse, requirePermission } from '@/lib/permissions'
+import { auditEvent } from '@/lib/audit'
 import { databaseErrorResponse } from '@/lib/db-errors'
 import { db } from '@/lib/db'
 import { products, stockMovements, stockTransfers, auditLogs } from '@/lib/db/schema'
@@ -88,9 +89,7 @@ export async function POST(request: Request) {
         })
       }
 
-      await tx.insert(auditLogs).values({
-        id: crypto.randomUUID(),
-        userId: user.id,
+      await tx.insert(auditLogs).values(auditEvent(user, {
         action: 'transfer',
         entityType: 'stock_transfer',
         entityId: createdTransfer.id,
@@ -98,7 +97,7 @@ export async function POST(request: Request) {
         metadata: { fromLocation, toLocation, quantity, productId },
         recordLabel: product.name,
         approval: 'Recorded',
-      })
+      }))
 
       return { kind: 'created' as const, transfer: createdTransfer }
     })

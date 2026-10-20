@@ -1,6 +1,7 @@
 import { and, eq } from 'drizzle-orm'
 import { NextResponse } from 'next/server'
 import { authErrorResponse, requireAuth, requirePermission } from '@/lib/permissions'
+import { auditEvent } from '@/lib/audit'
 import { db } from '@/lib/db'
 import { auditLogs, products, stockMovements } from '@/lib/db/schema'
 
@@ -90,14 +91,13 @@ export async function POST(request: Request) {
       }
 
       if (existing && existing.price !== product.price) {
-        await tx.insert(auditLogs).values({
-          id: crypto.randomUUID(),
-          userId: user.id,
+        await tx.insert(auditLogs).values(auditEvent(user, {
           action: 'price_change',
+          entityType: 'product',
+          entityId: product.id,
           recordLabel: product.name,
-          approval: 'manager',
-          createdAt: new Date(),
-        })
+          metadata: { from: existing.price, to: product.price },
+        }))
       }
 
       return product

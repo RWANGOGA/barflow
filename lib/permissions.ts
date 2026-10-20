@@ -21,7 +21,6 @@ export type Permission =
   | 'tabs.void'
   | 'reports.read'
   | 'audit.read'
-  | 'audit.write'
 
 const PERMISSION_ROLES: Record<Permission, readonly Role[]> = {
   'menu.manage': ['Admin', 'Manager'],
@@ -37,7 +36,6 @@ const PERMISSION_ROLES: Record<Permission, readonly Role[]> = {
   'tabs.void': ['Admin', 'Manager'],
   'reports.read': ['Admin', 'Manager'],
   'audit.read': ['Admin', 'Manager'],
-  'audit.write': ['Admin', 'Manager'],
 }
 
 export class AccessControlError extends Error {

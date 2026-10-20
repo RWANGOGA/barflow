@@ -99,9 +99,10 @@ The sidebar is filtered by role. If a user reaches a page that is not allowed fo
 
 ### Audit log
 
-- Audit records are stored in `bar_audit_log` and served through `/api/audit`.
-- Each record contains action, record label, approval state, user ownership, and creation time.
-- The audit view displays an empty state when no events exist instead of fabricated rows.
+- Audit records are stored in `bar_audit_log` and served read-only through `GET /api/audit`; there is no client-writable audit endpoint.
+- Events are written transactionally by the route that performs the change: tab voids and settlements, discounts, price changes, deliveries, transfers, day close, settings edits, team additions, and approval PIN changes.
+- Each record contains the action, entity, record label, reason, metadata, acting role, approval state, user ownership, and creation time.
+- The audit view filters by period and action, shows loading, error, and empty states instead of fabricated rows, and expands an event to its reason, entity id, and metadata.
 
 ### Settings
 

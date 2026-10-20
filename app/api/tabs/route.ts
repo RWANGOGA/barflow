@@ -1,6 +1,7 @@
 import { and, desc, eq, sql } from 'drizzle-orm'
 import { NextResponse } from 'next/server'
 import { authErrorResponse, requirePermission, verifyUserPin } from '@/lib/permissions'
+import { auditEvent } from '@/lib/audit'
 import { databaseErrorResponse } from '@/lib/db-errors'
 import { DAY_LOCKED_ERROR, isDayLocked } from '@/lib/day'
 import { db } from '@/lib/db'
@@ -75,16 +76,14 @@ async function voidTab(user: { id: string; role: string | null }, id: string, bo
       })
     }
 
-    await tx.insert(auditLogs).values({
-      id: crypto.randomUUID(),
-      userId: user.id,
+    await tx.insert(auditLogs).values(auditEvent(user, {
       action: 'void',
       entityType: 'tab',
       entityId: id,
       reason,
       recordLabel: tab.tableLabel,
-      approval: user.role === 'Admin' ? 'admin' : 'manager',
-    })
+      metadata: { waiter: tab.ownerName },
+    }))
     return tab
   })
 
@@ -159,16 +158,13 @@ async function settleTab(user: { id: string; role: string | null }, id: string, 
         .where(and(eq(tabs.id, id), eq(tabs.userId, user.id)))
         .returning()
 
-      await tx.insert(auditLogs).values({
-        id: crypto.randomUUID(),
-        userId: user.id,
+      await tx.insert(auditLogs).values(auditEvent(user, {
         action: 'settle',
         entityType: 'tab',
         entityId: id,
         recordLabel: tab.tableLabel,
-        approval: user.role === 'Admin' ? 'admin' : 'manager',
-        metadata: { saleId, total, paymentMethod, receiptNumber },
-      })
+        metadata: { saleId, total, paymentMethod, receiptNumber, waiter: tab.ownerName },
+      }))
 
       return { ...settled, saleId, total, receiptNumber, changeDue: 0 }
     })

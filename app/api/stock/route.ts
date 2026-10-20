@@ -1,6 +1,7 @@
 import { and, eq, sql } from 'drizzle-orm'
 import { NextResponse } from 'next/server'
 import { authErrorResponse, requirePermission } from '@/lib/permissions'
+import { auditEvent } from '@/lib/audit'
 import { db } from '@/lib/db'
 import { products, stockMovements, auditLogs } from '@/lib/db/schema'
 
@@ -20,30 +21,30 @@ export async function POST(request: Request) {
         .update(products)
         .set({ stock: sql`${products.stock} + ${quantity}`, updatedAt: new Date() })
         .where(and(eq(products.id, productId), eq(products.userId, user.id)))
-        .returning({ id: products.id, stock: products.stock })
+        .returning({ id: products.id, name: products.name, stock: products.stock })
 
       if (!updatedProduct) return null
 
+      const movementId = crypto.randomUUID()
+      const reference = String(body.reference ?? 'Delivery')
       await tx.insert(stockMovements).values({
-        id: crypto.randomUUID(),
+        id: movementId,
         userId: user.id,
         productId: updatedProduct.id,
         quantity,
         movementType: 'delivery',
-        reference: String(body.reference ?? 'Delivery'),
+        reference,
       })
 
-      await tx.insert(auditLogs).values({
-        id: crypto.randomUUID(),
-        userId: user.id,
+      await tx.insert(auditLogs).values(auditEvent(user, {
         action: 'delivery',
         entityType: 'stock_delivery',
-        entityId: updatedProduct.id,
-        reason: String(body.reference ?? 'Delivery'),
+        entityId: movementId,
+        reason: reference,
         metadata: { quantity, productId },
-        recordLabel: updatedProduct.id,
+        recordLabel: updatedProduct.name,
         approval: 'Recorded',
-      })
+      }))
 
       return updatedProduct
     })

@@ -1,8 +1,9 @@
 import { eq } from 'drizzle-orm'
 import { NextResponse } from 'next/server'
 import { authErrorResponse, requirePermission, verifyUserPin } from '@/lib/permissions'
+import { auditEvent } from '@/lib/audit'
 import { db } from '@/lib/db'
-import { discounts, sales } from '@/lib/db/schema'
+import { auditLogs, discounts, sales } from '@/lib/db/schema'
 
 export async function POST(
   request: Request,
@@ -30,18 +31,31 @@ export async function POST(
     if (!sale || sale.userId !== user.id) return NextResponse.json({ error: 'Sale not found' }, { status: 404 })
     if (amount > sale.total) return NextResponse.json({ error: 'Discount exceeds sale total' }, { status: 400 })
 
-    const [discount] = await db
-      .insert(discounts)
-      .values({
-        id: crypto.randomUUID(),
-        userId: user.id,
-        saleId: sale_id,
-        amount,
+    const discount = await db.transaction(async (tx) => {
+      const [created] = await tx
+        .insert(discounts)
+        .values({
+          id: crypto.randomUUID(),
+          userId: user.id,
+          saleId: sale_id,
+          amount,
+          reason,
+          approvedBy: user.id,
+          approvedAt: new Date(),
+        })
+        .returning()
+
+      await tx.insert(auditLogs).values(auditEvent(user, {
+        action: 'discount',
+        entityType: 'sale',
+        entityId: sale_id,
+        recordLabel: `Sale ${sale_id.slice(0, 8)}`,
         reason,
-        approvedBy: user.id,
-        approvedAt: new Date(),
-      })
-      .returning()
+        metadata: { amount, saleTotal: sale.total },
+      }))
+
+      return created
+    })
 
     return NextResponse.json(discount, { status: 201 })
   } catch (error) {

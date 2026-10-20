@@ -2,8 +2,9 @@ import { createHash } from 'node:crypto'
 import { eq } from 'drizzle-orm'
 import { NextResponse } from 'next/server'
 import { authErrorResponse, requirePermission } from '@/lib/permissions'
+import { auditEvent } from '@/lib/audit'
 import { db } from '@/lib/db'
-import { userPins } from '@/lib/db/schema'
+import { auditLogs, userPins } from '@/lib/db/schema'
 
 const hashPin = (pin: string) => createHash('sha256').update(pin).digest('hex')
 
@@ -33,11 +34,27 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'A PIN must be 4 to 8 digits' }, { status: 400 })
     }
 
+    const [existing] = await db
+      .select({ userId: userPins.userId })
+      .from(userPins)
+      .where(eq(userPins.userId, user.id))
+      .limit(1)
+
     const pinHash = hashPin(pin)
-    await db
-      .insert(userPins)
-      .values({ userId: user.id, pinHash })
-      .onConflictDoUpdate({ target: userPins.userId, set: { pinHash } })
+    await db.transaction(async (tx) => {
+      await tx
+        .insert(userPins)
+        .values({ userId: user.id, pinHash })
+        .onConflictDoUpdate({ target: userPins.userId, set: { pinHash } })
+
+      await tx.insert(auditLogs).values(auditEvent(user, {
+        action: 'pin_change',
+        entityType: 'approval_pin',
+        entityId: user.id,
+        recordLabel: existing ? 'Approval PIN replaced' : 'Approval PIN created',
+        metadata: { replaced: Boolean(existing) },
+      }))
+    })
 
     return NextResponse.json({ hasPin: true })
   } catch (error) {

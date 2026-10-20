@@ -1,6 +1,7 @@
 import { and, eq, gte } from 'drizzle-orm'
 import { NextResponse } from 'next/server'
 import { authErrorResponse, requireAuth, requirePermission } from '@/lib/permissions'
+import { auditEvent } from '@/lib/audit'
 import { databaseErrorResponse } from '@/lib/db-errors'
 import { db } from '@/lib/db'
 import { auditLogs, salePayments, sales, tabs, tradingDays } from '@/lib/db/schema'
@@ -97,17 +98,14 @@ export async function POST(request: Request) {
         closedAt,
       }).where(and(eq(tradingDays.id, existing[0].id), eq(tradingDays.userId, userId)))
 
-      await db.insert(auditLogs).values({
-        id: crypto.randomUUID(),
-        userId,
+      await db.insert(auditLogs).values(auditEvent(user, {
         action: 'day_close',
         entityType: 'day',
         entityId: existing[0].id,
         reason: reason || null,
         recordLabel: existing[0].businessDate,
-        approval: user.role === 'Admin' ? 'admin' : 'manager',
         metadata: { countedCash, expectedCash, cashVariance },
-      })
+      }))
 
       return NextResponse.json({ ...existing[0], status: 'closed', countedCash, expectedCash, cashVariance, varianceReason: reason || null, varianceAccepted: true, locked: true, closedAt })
     }

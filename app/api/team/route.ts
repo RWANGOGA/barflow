@@ -2,8 +2,9 @@ import { createHash } from 'node:crypto'
 import { desc, eq } from 'drizzle-orm'
 import { NextResponse } from 'next/server'
 import { authErrorResponse, requirePermission } from '@/lib/permissions'
+import { auditEvent } from '@/lib/audit'
 import { db } from '@/lib/db'
-import { teamMembers } from '@/lib/db/schema'
+import { auditLogs, teamMembers } from '@/lib/db/schema'
 
 export async function GET() {
   try {
@@ -45,10 +46,23 @@ export async function POST(request: Request) {
       // Only the digest is stored; the personal PIN is never persisted in clear text.
       pin: createHash('sha256').update(pin).digest('hex'),
     }
-    const [created] = await db
-      .insert(teamMembers)
-      .values(member)
-      .returning({ id: teamMembers.id, name: teamMembers.name, role: teamMembers.role })
+    const created = await db.transaction(async (tx) => {
+      const [row] = await tx
+        .insert(teamMembers)
+        .values(member)
+        .returning({ id: teamMembers.id, name: teamMembers.name, role: teamMembers.role })
+
+      // The PIN digest is deliberately absent from the audit row.
+      await tx.insert(auditLogs).values(auditEvent(user, {
+        action: 'team_add',
+        entityType: 'team_member',
+        entityId: row.id,
+        recordLabel: `${row.name} (${row.role})`,
+        metadata: { role: row.role },
+      }))
+
+      return row
+    })
 
     return NextResponse.json(created, { status: 201 })
   } catch (error) {

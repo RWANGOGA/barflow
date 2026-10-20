@@ -1,57 +1,81 @@
-import { desc, eq } from 'drizzle-orm'
+import { and, desc, eq, gte, lt, sql } from 'drizzle-orm'
 import { NextResponse } from 'next/server'
 import { authErrorResponse, requirePermission } from '@/lib/permissions'
+import { databaseErrorResponse } from '@/lib/db-errors'
 import { db } from '@/lib/db'
 import { auditLogs, user as users } from '@/lib/db/schema'
 
-export async function GET() {
-  try {
-    const user = await requirePermission('audit.read')
-    const rows = await db
-      .select({
-        id: auditLogs.id,
-        action: auditLogs.action,
-        recordLabel: auditLogs.recordLabel,
-        approval: auditLogs.approval,
-        reason: auditLogs.reason,
-        createdAt: auditLogs.createdAt,
-        userName: users.name,
-      })
-      .from(auditLogs)
-      .innerJoin(users, eq(users.id, auditLogs.userId))
-      .where(eq(auditLogs.userId, user.id))
-      .orderBy(desc(auditLogs.createdAt))
-      .limit(100)
+const DEFAULT_LIMIT = 100
+const MAX_LIMIT = 300
 
-    return NextResponse.json(rows)
-  } catch (error) {
-    return authErrorResponse(error) ?? NextResponse.json({ error: 'Could not load audit log' }, { status: 500 })
-  }
+/** Parse YYYY-MM-DD as UTC midnight, matching how the app derives business dates. */
+function boundary(value: string | null, exclusiveNextDay = false) {
+  if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return null
+  const date = new Date(`${value}T00:00:00.000Z`)
+  if (Number.isNaN(date.getTime())) return null
+  if (exclusiveNextDay) date.setUTCDate(date.getUTCDate() + 1)
+  return date
 }
 
-export async function POST(request: Request) {
+/**
+ * Audit history is written by the routes that perform each change, so this endpoint is
+ * read-only by design. A client-writable audit endpoint would let an operator forge or
+ * erase the record it is meant to prove.
+ */
+export async function GET(request: Request) {
   try {
-    const user = await requirePermission('audit.write')
-    const body = await request.json()
-    if (typeof body.action !== 'string' || typeof body.recordLabel !== 'string') {
-      return NextResponse.json({ error: 'Invalid audit event' }, { status: 400 })
-    }
+    const user = await requirePermission('audit.read')
+    const url = new URL(request.url)
 
-    const [created] = await db
-      .insert(auditLogs)
-      .values({
-        id: crypto.randomUUID(),
-        userId: user.id,
-        action: body.action.slice(0, 120),
-        recordLabel: body.recordLabel.slice(0, 160),
-        // Approval is derived from the signed-in role, never accepted from request data.
-        approval: user.role === 'Admin' ? 'admin' : 'manager',
-      })
-      .returning()
+    const action = url.searchParams.get('action')
+    const entityType = url.searchParams.get('entityType')
+    const from = boundary(url.searchParams.get('from'))
+    const to = boundary(url.searchParams.get('to'), true)
+    const requestedLimit = Number(url.searchParams.get('limit') ?? DEFAULT_LIMIT)
+    const limit = Number.isFinite(requestedLimit)
+      ? Math.min(Math.max(Math.trunc(requestedLimit), 1), MAX_LIMIT)
+      : DEFAULT_LIMIT
 
-    return NextResponse.json(created, { status: 201 })
+    const filters = [eq(auditLogs.userId, user.id)]
+    if (action && action !== 'all') filters.push(eq(auditLogs.action, action.slice(0, 120)))
+    if (entityType) filters.push(eq(auditLogs.entityType, entityType.slice(0, 60)))
+    if (from) filters.push(gte(auditLogs.createdAt, from))
+    if (to) filters.push(lt(auditLogs.createdAt, to))
+    const where = and(...filters)
+
+    const [events, [totals]] = await Promise.all([
+      db
+        .select({
+          id: auditLogs.id,
+          action: auditLogs.action,
+          entityType: auditLogs.entityType,
+          entityId: auditLogs.entityId,
+          recordLabel: auditLogs.recordLabel,
+          reason: auditLogs.reason,
+          approval: auditLogs.approval,
+          actorRole: auditLogs.actorRole,
+          metadata: auditLogs.metadata,
+          createdAt: auditLogs.createdAt,
+          userName: users.name,
+          userRole: users.role,
+        })
+        .from(auditLogs)
+        // A left join keeps the event visible even if the account row is gone.
+        .leftJoin(users, eq(users.id, auditLogs.userId))
+        .where(where)
+        .orderBy(desc(auditLogs.createdAt))
+        .limit(limit),
+      db.select({ total: sql<number>`count(*)::int` }).from(auditLogs).where(where),
+    ])
+
+    const total = totals?.total ?? events.length
+    return NextResponse.json({ events, total, limit, hasMore: total > events.length })
   } catch (error) {
-    return authErrorResponse(error) ?? NextResponse.json({ error: 'Could not save audit event' }, { status: 400 })
+    return (
+      authErrorResponse(error) ??
+      databaseErrorResponse(error) ??
+      NextResponse.json({ error: 'Could not load audit log' }, { status: 500 })
+    )
   }
 }
 

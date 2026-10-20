@@ -1,6 +1,7 @@
 import { and, desc, eq, sql } from 'drizzle-orm'
 import { NextResponse } from 'next/server'
 import { authErrorResponse, requirePermission } from '@/lib/permissions'
+import { auditEvent } from '@/lib/audit'
 import { db } from '@/lib/db'
 import { products, stockDeliveries, stockMovements, auditLogs } from '@/lib/db/schema'
 
@@ -33,7 +34,7 @@ export async function POST(request: Request) {
 
     const delivery = await db.transaction(async (tx) => {
       const [product] = await tx
-        .select({ id: products.id })
+        .select({ id: products.id, name: products.name })
         .from(products)
         .where(and(eq(products.id, productId), eq(products.userId, user.id)))
         .limit(1)
@@ -68,17 +69,15 @@ export async function POST(request: Request) {
         createdAt: new Date(),
       })
 
-      await tx.insert(auditLogs).values({
-        id: crypto.randomUUID(),
-        userId: user.id,
+      await tx.insert(auditLogs).values(auditEvent(user, {
         action: 'delivery',
         entityType: 'stock_delivery',
         entityId: createdDelivery.id,
         reason: String(body.supplier ?? ''),
         metadata: { quantity, productId, costPrice, deliveryDate: String(body.delivery_date ?? '') },
-        recordLabel: product.id,
+        recordLabel: product.name,
         approval: 'Recorded',
-      })
+      }))
 
       return createdDelivery
     })
