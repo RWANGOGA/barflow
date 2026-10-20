@@ -17,8 +17,8 @@ class RequestActor:
 LOCKOUT_MAX_ATTEMPTS = 5
 LOCKOUT_WINDOW_MINUTES = 15
 
-# Better Auth default cookie name
-SESSION_COOKIE_NAME = "better-auth.session_token"
+# Better Auth prefixes the cookie name with __Secure- when the app is served over HTTPS.
+SESSION_COOKIE_NAMES = ("better-auth.session_token", "__Secure-better-auth.session_token")
 
 
 async def record_login_attempt(user_id: str, success: bool, ip_address: str | None = None) -> None:
@@ -77,11 +77,15 @@ async def _actor_from_session_token(token: str) -> RequestActor | None:
 
 async def get_actor(request: Request) -> RequestActor:
     """Resolve the current actor exclusively from a verified Better Auth session."""
-    token = request.cookies.get(SESSION_COOKIE_NAME)
-    if token:
-        actor = await _actor_from_session_token(token)
-        if actor:
-            return actor
+    for name in SESSION_COOKIE_NAMES:
+        token = request.cookies.get(name)
+        if not token:
+            continue
+        # Signed cookies append a signature; try the raw value and the bare token.
+        for candidate in {token, token.rsplit('.', 1)[0]}:
+            actor = await _actor_from_session_token(candidate)
+            if actor:
+                return actor
 
     raise HTTPException(status_code=401, detail="Authentication required.")
 

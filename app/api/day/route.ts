@@ -2,7 +2,7 @@ import { and, eq, gte } from 'drizzle-orm'
 import { NextResponse } from 'next/server'
 import { authErrorResponse, requireAuth, requirePermission } from '@/lib/permissions'
 import { db } from '@/lib/db'
-import { salePayments, sales, tabs, tradingDays } from '@/lib/db/schema'
+import { auditLogs, salePayments, sales, tabs, tradingDays } from '@/lib/db/schema'
 
 async function expectedCashFor(userId: string, openingFloat: number) {
   const todayStart = new Date()
@@ -74,9 +74,16 @@ export async function POST(request: Request) {
       const openTabs = await db.select().from(tabs).where(and(eq(tabs.userId, userId), eq(tabs.status, 'open'))).limit(1)
       if (openTabs.length > 0) return NextResponse.json({ error: 'Open tabs must be settled before closing.' }, { status: 400 })
       const countedCash = Number(body.countedCash) || 0
+      if (!Number.isInteger(countedCash) || countedCash < 0) {
+        return NextResponse.json({ error: 'Counted cash must be a whole amount of 0 or more.' }, { status: 400 })
+      }
       const expectedCash = await expectedCashFor(userId, existing[0].openingFloat ?? 0)
       const cashVariance = countedCash - expectedCash
       const reason = typeof body.varianceReason === 'string' ? body.varianceReason.trim() : ''
+      // A cash difference must be explained before the day can be locked.
+      if (cashVariance !== 0 && reason.length < 3) {
+        return NextResponse.json({ error: 'A variance reason is required when counted cash does not match expected cash.' }, { status: 400 })
+      }
       await db.update(tradingDays).set({
         status: 'closed',
         countedCash,
@@ -87,6 +94,19 @@ export async function POST(request: Request) {
         locked: true,
         closedAt: new Date(),
       }).where(and(eq(tradingDays.id, existing[0].id), eq(tradingDays.userId, userId)))
+
+      await db.insert(auditLogs).values({
+        id: crypto.randomUUID(),
+        userId,
+        action: 'day_close',
+        entityType: 'day',
+        entityId: existing[0].id,
+        reason: reason || null,
+        recordLabel: existing[0].businessDate,
+        approval: user.role === 'Admin' ? 'admin' : 'manager',
+        metadata: { countedCash, expectedCash, cashVariance },
+      })
+
       return NextResponse.json({ ...existing[0], status: 'closed', countedCash, expectedCash, cashVariance, locked: true })
     }
 

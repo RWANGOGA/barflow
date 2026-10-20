@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { desc, eq } from 'drizzle-orm'
 import { NextResponse } from 'next/server'
 import { authErrorResponse, requirePermission } from '@/lib/permissions'
@@ -41,7 +42,8 @@ export async function POST(request: Request) {
       userId: user.id,
       name,
       role,
-      pin,
+      // Only the digest is stored; the personal PIN is never persisted in clear text.
+      pin: createHash('sha256').update(pin).digest('hex'),
     }
     const [created] = await db
       .insert(teamMembers)

@@ -18,8 +18,28 @@ def authorized(actor: RequestActor, permission: str) -> Actor:
     return identity
 
 
-async def write_audit(conn, actor: RequestActor, action: str, entity_type: str, entity_id: str, reason: str | None = None, metadata: dict | None = None):
-    await conn.execute('INSERT INTO bar_audit_log (id,user_id,actor_role,action,entity_type,entity_id,reason,metadata) VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb)', str(uuid4()), actor.user_id, actor.role.value, action, entity_type, entity_id, reason, json.dumps(metadata or {}))
+def audit_label(entity_type: str, entity_id: str, record_label: str | None) -> str:
+    """Every audit row needs a human-readable label, so fall back to a stable identifier."""
+    label = (record_label or '').strip() or f'{entity_type}:{entity_id}'
+    return label[:160]
+
+
+async def write_audit(conn, actor: RequestActor, action: str, entity_type: str, entity_id: str, reason: str | None = None, metadata: dict | None = None, record_label: str | None = None):
+    # record_label and approval are NOT NULL on databases created from the legacy SQL lineage,
+    # so they are always supplied instead of relying on column defaults.
+    await conn.execute(
+        'INSERT INTO bar_audit_log (id,user_id,actor_role,action,entity_type,entity_id,reason,metadata,record_label,approval) VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9,$10)',
+        str(uuid4()),
+        actor.user_id,
+        actor.role.value,
+        action,
+        entity_type,
+        entity_id,
+        reason,
+        json.dumps(metadata or {}),
+        audit_label(entity_type, entity_id, record_label),
+        'admin' if actor.role == Role.admin else actor.role.value.lower(),
+    )
 
 
 @router.post('/sales', status_code=201)
@@ -89,7 +109,7 @@ async def void_sale(sale_id: str, payload: TabVoid, actor: RequestActor = Depend
             for item in items:
                 await conn.execute('UPDATE bar_product SET stock = stock + $1, updated_at = now() WHERE user_id=$2 AND id = $3', item['quantity'], actor.user_id, item['product_id'])
                 await conn.execute('INSERT INTO bar_stock_movement (id,user_id,product_id,quantity,movement_type,reference) VALUES ($1,$2,$3,$4,$5,$6)', str(uuid4()), actor.user_id, item['product_id'], item['quantity'], 'void_return', sale_id)
-            await write_audit(conn, actor, 'void', 'sale', sale_id, payload.reason)
+            await write_audit(conn, actor, 'void', 'sale', sale_id, payload.reason, record_label=sale_id)
     return dict(row)
 
 
@@ -309,7 +329,7 @@ async def settle_tab(tab_id: str, payload: TabSettle, actor: RequestActor = Depe
                 await conn.execute('INSERT INTO bar_stock_movement (id,user_id,product_id,quantity,movement_type,reference) VALUES ($1,$2,$3,$4,$5,$6)', str(uuid4()), actor.user_id, item['product_id'], -item['quantity'], 'sale', sale_id)
             response = {'tab_id': tab_id, 'sale_id': sale_id, 'total': tab['total'], 'payment_method': payload.payment_method.value, 'status': 'settled'}
             await conn.execute("UPDATE bar_tab SET status='settled', payment_method=$1, settled_by=$2, sale_id=$3, settled_at=now() WHERE id=$4 AND user_id=$5", payload.payment_method.value, actor.user_id, sale_id, tab_id, actor.user_id)
-            await write_audit(conn, actor, 'settle', 'tab', tab_id, metadata={'sale_id': sale_id, 'total': str(tab['total']), 'payment_method': payload.payment_method.value})
+            await write_audit(conn, actor, 'settle', 'tab', tab_id, metadata={'sale_id': sale_id, 'total': str(tab['total']), 'payment_method': payload.payment_method.value}, record_label=tab['table_label'])
             await conn.execute('INSERT INTO bar_idempotency_key (user_id,idempotency_key,request_hash,response_json) VALUES ($1,$2,$3,$4::jsonb)', actor.user_id, payload.idempotency_key, request_hash, json.dumps(response))
     return response
 
@@ -319,10 +339,18 @@ async def void_tab(tab_id: str, payload: TabVoid, actor: RequestActor = Depends(
     authorized(actor, 'tabs.void')
     async with connection() as conn:
         async with conn.transaction():
-            row = await conn.fetchrow("UPDATE bar_tab SET status='voided', voided_by=$1, void_reason=$2 WHERE id=$3 AND user_id=$4 AND status='open' RETURNING id, status, void_reason, voided_by", actor.user_id, payload.reason, tab_id, actor.user_id)
+            if actor.role != Role.admin:
+                if not payload.pin:
+                    raise HTTPException(status_code=400, detail='Manager PIN is required to void a tab.')
+                pin_row = await conn.fetchrow('SELECT pin_hash FROM bar_user_pin WHERE user_id=$1', actor.user_id)
+                if not pin_row or not pin_row['pin_hash']:
+                    raise HTTPException(status_code=400, detail='No PIN set for this user.')
+                if hashlib.sha256(payload.pin.encode()).hexdigest() != pin_row['pin_hash']:
+                    raise HTTPException(status_code=403, detail='Invalid PIN.')
+            row = await conn.fetchrow("UPDATE bar_tab SET status='voided', voided_by=$1, void_reason=$2 WHERE id=$3 AND user_id=$4 AND status='open' RETURNING id, table_label, status, void_reason, voided_by", actor.user_id, payload.reason, tab_id, actor.user_id)
             if not row:
                 raise HTTPException(status_code=404, detail='Open tab was not found.')
-            await write_audit(conn, actor, 'void', 'tab', tab_id, payload.reason)
+            await write_audit(conn, actor, 'void', 'tab', tab_id, payload.reason, record_label=row['table_label'])
     return dict(row)
 
 
@@ -331,10 +359,10 @@ async def reopen_tab(tab_id: str, payload: TabReopen, actor: RequestActor = Depe
     authorized(actor, 'tabs.reopen')
     async with connection() as conn:
         async with conn.transaction():
-            row = await conn.fetchrow("UPDATE bar_tab SET status='open', reopened_by=$1, reopen_reason=$2, settled_at=NULL, payment_method=NULL, settled_by=NULL, sale_id=NULL WHERE id=$3 AND user_id=$4 AND status='settled' RETURNING id, status, reopen_reason, reopened_by", actor.user_id, payload.reason, tab_id, actor.user_id)
+            row = await conn.fetchrow("UPDATE bar_tab SET status='open', reopened_by=$1, reopen_reason=$2, settled_at=NULL, payment_method=NULL, settled_by=NULL, sale_id=NULL WHERE id=$3 AND user_id=$4 AND status='settled' RETURNING id, table_label, status, reopen_reason, reopened_by", actor.user_id, payload.reason, tab_id, actor.user_id)
             if not row:
                 raise HTTPException(status_code=404, detail='Settled tab was not found.')
-            await write_audit(conn, actor, 'reopen', 'tab', tab_id, payload.reason)
+            await write_audit(conn, actor, 'reopen', 'tab', tab_id, payload.reason, record_label=row['table_label'])
     return dict(row)
 
 

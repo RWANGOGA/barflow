@@ -72,13 +72,36 @@ Copy `.env.example` to `.env.local`, then replace the placeholders:
 - `BETTER_AUTH_SECRET`: a private random secret of at least 32 characters. Generate one with `openssl rand -base64 32`.
 - `DATABASE_URL`: the private Neon pooled PostgreSQL connection for Next.js and FastAPI runtime. Set the same value in Vercel and Render.
 - `NEON_MIGRATION_DATABASE_URL`: optional direct Neon connection for local migrations; GitHub Actions uses the repository secret of the same name.
-- `NEXT_PUBLIC_BACKEND_URL`: the FastAPI backend origin.
+- `BACKEND_URL`: the FastAPI backend origin, read only on the server. The browser calls the same-origin `/api/backend` proxy, which forwards the session cookie to FastAPI.
 
 Set `BETTER_AUTH_URL` and `BETTER_AUTH_SECRET` in every Vercel environment that builds or runs the app. The auth module fails fast with a clear configuration error if either value is missing; there is no service-role-key fallback. Never commit `.env.local` or production secrets.
 
 New self-registered accounts receive the `Cashier` role, the least-privileged role supported by RBAC. The first owner account is promoted by the one-time token-gated `pnpm db:admin` CLI below; no direct SQL is required.
 
 The new Neon baseline in `drizzle/migrations/` includes the `Cashier` default. Existing `backend/migrations/` and `supabase/migrations/` directories are historical and are not replayed against Neon.
+
+### Local database and FastAPI
+
+Next.js and the FastAPI service can share any plain Postgres instance for development. A container keeps the data across restarts:
+
+```bash
+docker run -d --name barflow-postgres -p 55432:5432 \
+  -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=barflow_dev \
+  postgres:16-alpine
+```
+
+Point `DATABASE_URL` and `NEON_MIGRATION_DATABASE_URL` at that database, then:
+
+```bash
+pnpm db:migrate     # apply drizzle/migrations to the local database
+pnpm db:info        # target, TLS, row count per table, applied migrations
+pnpm db:seed        # demo catalogue, roster, and settings for the first Admin
+pnpm backend:dev    # FastAPI on http://127.0.0.1:8000 against the same database
+```
+
+`pnpm db:info` never prints the password, and `pnpm db:seed` refuses to run against a non-local host unless `--allow-remote` is passed. Inspect the data directly with `docker exec -it barflow-postgres psql -U postgres -d barflow_dev`, then `\dt` for tables and `\d bar_sale` for one table's columns.
+
+Local `BACKEND_URL` must be `http://127.0.0.1:8000`. The browser calls the same-origin `/api/backend` proxy, which forwards the session cookie, so Next.js and FastAPI must share one database for authenticated calls to succeed. Sign up once, give that account the `Admin` role, and run `pnpm db:seed`.
 
 ### Neon migrations and deployment
 

@@ -2,14 +2,23 @@ import { desc, eq } from 'drizzle-orm'
 import { NextResponse } from 'next/server'
 import { authErrorResponse, requirePermission } from '@/lib/permissions'
 import { db } from '@/lib/db'
-import { auditLogs } from '@/lib/db/schema'
+import { auditLogs, user as users } from '@/lib/db/schema'
 
 export async function GET() {
   try {
     const user = await requirePermission('audit.read')
     const rows = await db
-      .select()
+      .select({
+        id: auditLogs.id,
+        action: auditLogs.action,
+        recordLabel: auditLogs.recordLabel,
+        approval: auditLogs.approval,
+        reason: auditLogs.reason,
+        createdAt: auditLogs.createdAt,
+        userName: users.name,
+      })
       .from(auditLogs)
+      .innerJoin(users, eq(users.id, auditLogs.userId))
       .where(eq(auditLogs.userId, user.id))
       .orderBy(desc(auditLogs.createdAt))
       .limit(100)

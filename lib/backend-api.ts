@@ -2,7 +2,9 @@ export type BackendRole = 'Admin' | 'Manager' | 'Cashier' | 'Storekeeper'
 
 export type PaymentMethod = 'cash' | 'mobile_money' | 'card'
 
-const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL ?? 'https://barflow-rk55.onrender.com'
+// Call our own origin. The /api/backend route forwards the session cookie to FastAPI, which a
+// direct browser call to onrender.com cannot do: the Better Auth cookie belongs to this domain.
+const BACKEND_URL = '/api/backend'
 
 export async function backendRequest<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${BACKEND_URL}${path}`, {

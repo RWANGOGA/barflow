@@ -1,6 +1,7 @@
 from collections.abc import Awaitable, Callable
 import json
 import logging
+import os
 from time import perf_counter
 from uuid import uuid4
 
@@ -20,11 +21,16 @@ from .db import check_database
 DatabaseCheck = Callable[[], Awaitable[bool]]
 logger = logging.getLogger('barflow.api')
 
-# Origins that are allowed to send cookies to this API
+# Origins allowed to send cookies directly to this API. Comma-separated so a deployment can add
+# its own Vercel domain without a code change. The dashboard normally reaches this service through
+# the Next.js /api/backend proxy, where CORS does not apply at all.
 ALLOWED_ORIGINS = [
-    "http://localhost:3000",
-    "https://barflow-one.vercel.app",
-    # Add any other frontend URLs you use (v0 previews, custom domains, etc.)
+    origin.strip().rstrip("/")
+    for origin in os.getenv(
+        "ALLOWED_ORIGINS",
+        "http://localhost:3000,http://localhost:3002,https://barflow-one.vercel.app",
+    ).split(",")
+    if origin.strip()
 ]
 
 

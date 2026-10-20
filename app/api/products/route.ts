@@ -2,7 +2,7 @@ import { and, eq } from 'drizzle-orm'
 import { NextResponse } from 'next/server'
 import { authErrorResponse, requireAuth, requirePermission } from '@/lib/permissions'
 import { db } from '@/lib/db'
-import { auditLogs, products } from '@/lib/db/schema'
+import { auditLogs, products, stockMovements } from '@/lib/db/schema'
 
 export async function GET() {
   try {
@@ -52,10 +52,14 @@ export async function POST(request: Request) {
     if (!product.id || !product.name || !product.category || !product.unit) {
       return NextResponse.json({ error: 'Invalid product' }, { status: 400 })
     }
+    const amounts = [product.price, product.stock, product.reorder, product.cost]
+    if (!amounts.every((amount) => Number.isInteger(amount)) || product.price <= 0 || product.stock < 0 || product.reorder < 0 || product.cost < 0) {
+      return NextResponse.json({ error: 'Price, stock, reorder level and cost must be whole numbers within range' }, { status: 400 })
+    }
 
     const savedProduct = await db.transaction(async (tx) => {
       const [existing] = await tx
-        .select({ userId: products.userId, price: products.price })
+        .select({ userId: products.userId, price: products.price, stock: products.stock })
         .from(products)
         .where(eq(products.id, product.id))
         .limit(1)
@@ -70,6 +74,19 @@ export async function POST(request: Request) {
           .where(and(eq(products.id, product.id), eq(products.userId, user.id)))
       } else {
         await tx.insert(products).values(product)
+      }
+
+      // Editing the opening stock on the menu page is still a stock movement and must be traceable.
+      const stockDelta = existing ? product.stock - existing.stock : product.stock
+      if (stockDelta !== 0) {
+        await tx.insert(stockMovements).values({
+          id: crypto.randomUUID(),
+          userId: user.id,
+          productId: product.id,
+          quantity: stockDelta,
+          movementType: 'menu_adjustment',
+          reference: product.name,
+        })
       }
 
       if (existing && existing.price !== product.price) {
