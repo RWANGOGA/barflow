@@ -36,12 +36,21 @@ The sidebar is filtered by role. If a user reaches a page that is not allowed fo
 
 ### Overview
 
-- Live sales total for the current day.
-- Live order count.
-- Live open-tab count.
-- Live weekly sales chart data.
-- Live low-stock count.
-- Live checklist progress.
+Everything on this page is queried live from Postgres; there are no hardcoded or sample figures.
+
+- Range selector: this day, this week, month, two months, mid year, or all time. Every panel and chart follows the selected range.
+- KPI cards: today's sales with a delta against yesterday, range revenue with a delta against the equally long previous period, orders served with average order value, and open tabs with the outstanding amount.
+- Six-stat strip: items sold, average order, discounts applied and their value, voided orders and their value, expected cash in the till, and low-stock count.
+- Sales trend chart drawn from real sales rows, with granularity that follows the range: hourly for today, daily for week/month, weekly for two months, and monthly for mid year/all time. Hovering a bar shows revenue and order count.
+- Payment mix bar with each method's amount and share of the range's revenue.
+- Top products by revenue with quantity sold and a relative revenue bar.
+- Recent activity listing the latest completed sales across all dates, with payment method, table, and time.
+- Low stock list with reorder levels, capped at six items with a count of the rest.
+- Manager checklist computed from stock, tabs, and the trading day: review low stock, settle open tabs, count the till at close, and trading day open.
+- Cash drawer card for Admin/Manager: opening float, expected cash for the trading session, counted cash, and variance. A reopened day clears the previous count; a closed day keeps its frozen figures. Other roles see a dash instead of cash values.
+- Auto-refreshes every 30 seconds, refreshes on any recorded activity (sale, tab, stock, day close), and offers a manual Refresh button. Out-of-order responses are discarded so an older fetch cannot overwrite a newer one.
+- Honest failure handling: a failed query shows an error banner with Retry and keeps the last good snapshot; it never renders a zeroed dashboard that looks like real data.
+- Day boundaries, chart buckets, and trading-day dates use the bar's own timezone (`BAR_TIMEZONE`, default `Africa/Kampala`), so a bar trading after midnight and a UTC server agree on "today".
 - Time-aware greeting: morning before noon, afternoon before 18:00, and evening after 18:00.
 - Responsive navigation: desktop left sidebar and mobile bottom navigation.
 
@@ -146,7 +155,7 @@ All operational tables carry a `user_id` owner. Server routes retrieve the Bette
 | Route | Purpose |
 |---|---|
 | `/api/auth/[...all]` | Better Auth handler |
-| `/api/overview` | Dashboard metrics and weekly activity |
+| `/api/overview` | Live range-aware analytics: revenue and order deltas, trend series, payment mix, top products, low stock, open tabs, cash drawer, recent sales, and checklist. Returns an error instead of a zeroed payload when a query fails |
 | `/api/products` | Catalogue reads and product management |
 | `/api/sales` | Create and read sales |
 | `/api/stock` | Stock movements and delivery updates |
