@@ -84,13 +84,18 @@ Everything on this page is queried live from Postgres; there are no hardcoded or
 - Inventory is loaded from Neon.
 - Low-stock indicators use current stock and reorder thresholds.
 - Delivery controls support receiving stock and showing movement feedback.
+- Stock changes are guarded writes: a sale, tab, or transfer only succeeds while enough stock remains, so two tills can never sell the same bottle or push stock negative.
+- Deliveries validate whole-number cost and business-date values before they reach the database.
 - `/api/stock` handles stock movement operations.
 
 ### Daily close
 
 - Opening float and counted cash are submitted through `/api/day`.
-- Trading-day status is persisted as open or closed.
-- Closed state locks the operational close workflow until a new day is opened.
+- The open day wins over the calendar date, so a close after midnight still finds the session it belongs to.
+- Expected cash is the opening float plus cash payments since the day opened, split-payment aware.
+- A day cannot be closed twice: the second attempt is rejected instead of overwriting the first count.
+- Closing requires no open tabs, and any cash variance needs an explanation.
+- Trading-day status is persisted as open or closed, and a closed day locks sales, tabs, and discounts until a new day is opened.
 - Dashboard startup reads the saved trading-day state from Neon.
 
 ### Team and permissions
@@ -102,8 +107,10 @@ Everything on this page is queried live from Postgres; there are no hardcoded or
 
 ### Reports
 
-- `/api/reports` aggregates authenticated sales data.
-- Overview totals and payment summaries are derived from persisted sales rather than fixed demo totals.
+- `/api/reports` aggregates authenticated sales for the last thirty local calendar days, split-payment aware and void-aware.
+- `/api/reports/summary` groups by payment, category, and product for any business-date range; voided sales are excluded everywhere.
+- `/api/reports/daily` reports the real cost of goods sold from each item's cost price, real discounts for the day, and that day's wastage. Nothing is estimated from a fixed ratio.
+- Report boundaries are business dates in the bar's timezone, so a report for 21 October covers that local trading day rather than a UTC slice.
 - Reports support print-ready output and CSV download in the interface.
 
 ### Audit log
@@ -162,8 +169,10 @@ All operational tables carry a `user_id` owner. Server routes retrieve the Bette
 | `/api/day` | Open and close trading days |
 | `/api/tabs` | Open-tab reads and settlement |
 | `/api/team` | Staff reads and creation |
-| `/api/audit` | Audit event reads and writes |
-| `/api/reports` | Sales and payment aggregations |
+| `/api/audit` | Read-only audit event history; events are written by the routes that change data |
+| `/api/reports` | Range-aware sales and payment aggregations, excluding voided sales |
+| `/api/reports/summary` | Payment, category, and product breakdown for a business-date range |
+| `/api/reports/daily` | Daily close figures with real cost of goods, discounts, and wastage |
 
 ## Responsive implementation
 

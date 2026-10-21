@@ -1,4 +1,4 @@
-import { and, desc, eq, sql } from 'drizzle-orm'
+import { and, desc, eq, gte, sql } from 'drizzle-orm'
 import { NextResponse } from 'next/server'
 import { authErrorResponse, requirePermission } from '@/lib/permissions'
 import { auditEvent } from '@/lib/audit'
@@ -49,8 +49,31 @@ export async function POST(request: Request) {
 
       if (!product) return { kind: 'missing' as const }
 
-      if (fromLocation === 'Main' && product.stock < quantity) {
-        return { kind: 'insufficient' as const, available: product.stock }
+      // Only Main is backed by bar_product.stock, so only a transfer touching Main changes the
+      // inventory or belongs in the movement ledger. Store-to-Bar moves are recorded elsewhere.
+      const touchesMain = fromLocation === 'Main' || toLocation === 'Main'
+
+      // Reserve the stock before writing anything, so a short transfer leaves no trace.
+      if (fromLocation === 'Main') {
+        // The read above can lose a race with a sale; this guarded write cannot.
+        const [reserved] = await tx
+          .update(products)
+          .set({ stock: sql`${products.stock} - ${quantity}`, updatedAt: new Date() })
+          .where(and(eq(products.id, product.id), eq(products.userId, user.id), gte(products.stock, quantity)))
+          .returning({ id: products.id })
+        if (!reserved) {
+          const [latest] = await tx
+            .select({ stock: products.stock })
+            .from(products)
+            .where(and(eq(products.id, product.id), eq(products.userId, user.id)))
+            .limit(1)
+          return { kind: 'insufficient' as const, available: latest?.stock ?? 0 }
+        }
+      } else if (toLocation === 'Main') {
+        await tx
+          .update(products)
+          .set({ stock: sql`${products.stock} + ${quantity}`, updatedAt: new Date() })
+          .where(and(eq(products.id, product.id), eq(products.userId, user.id)))
       }
 
       const [createdTransfer] = await tx
@@ -62,23 +85,11 @@ export async function POST(request: Request) {
           quantity,
           fromLocation,
           toLocation,
-          reason: body.reason ? String(body.reason) : '',
+          reason: body.reason ? String(body.reason).trim().slice(0, 200) : '',
         })
         .returning()
 
-      // Only Main is backed by bar_product.stock, so only a transfer touching Main changes the
-      // inventory or belongs in the movement ledger. Store-to-Bar moves are recorded elsewhere.
-      if (fromLocation === 'Main' || toLocation === 'Main') {
-        await tx
-          .update(products)
-          .set({
-            stock: fromLocation === 'Main'
-              ? sql`${products.stock} - ${quantity}`
-              : sql`${products.stock} + ${quantity}`,
-            updatedAt: new Date(),
-          })
-          .where(and(eq(products.id, product.id), eq(products.userId, user.id)))
-
+      if (touchesMain) {
         await tx.insert(stockMovements).values({
           id: crypto.randomUUID(),
           userId: user.id,
@@ -93,7 +104,7 @@ export async function POST(request: Request) {
         action: 'transfer',
         entityType: 'stock_transfer',
         entityId: createdTransfer.id,
-        reason: body.reason ? String(body.reason) : '',
+        reason: body.reason ? String(body.reason).trim().slice(0, 200) : '',
         metadata: { fromLocation, toLocation, quantity, productId },
         recordLabel: product.name,
         approval: 'Recorded',

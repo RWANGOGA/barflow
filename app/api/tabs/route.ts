@@ -1,4 +1,4 @@
-import { and, desc, eq, sql } from 'drizzle-orm'
+import { and, desc, eq, gte, sql } from 'drizzle-orm'
 import { NextResponse } from 'next/server'
 import { authErrorResponse, requirePermission, verifyUserPin } from '@/lib/permissions'
 import { auditEvent } from '@/lib/audit'
@@ -197,8 +197,8 @@ export async function POST(request: Request) {
     const user = await requirePermission('tabs.manage')
     if (await isDayLocked(user.id)) return NextResponse.json({ error: DAY_LOCKED_ERROR }, { status: 409 })
     const body = await request.json()
-    const tableLabel = typeof body.tableLabel === 'string' ? body.tableLabel.trim() : ''
-    const ownerName = typeof body.ownerName === 'string' ? body.ownerName.trim() : ''
+    const tableLabel = typeof body.tableLabel === 'string' ? body.tableLabel.trim().slice(0, 60) : ''
+    const ownerName = typeof body.ownerName === 'string' ? body.ownerName.trim().slice(0, 60) : ''
     const items = requestedItems(body.items)
 
     if (!tableLabel || !ownerName || !items) {
@@ -209,11 +209,14 @@ export async function POST(request: Request) {
       const catalog = await tx.select().from(products).where(eq(products.userId, user.id))
       const priced: { productId: string; quantity: number; unitPrice: number; lineTotal: number }[] = []
 
-      for (const item of items) {
-        const product = catalog.find((row) => row.id === item.productId)
+      // The same drink can be added twice; throw once and guard the combined quantity.
+      const wanted = new Map<string, number>()
+      for (const item of items) wanted.set(item.productId, (wanted.get(item.productId) ?? 0) + item.quantity)
+      for (const [productId, quantity] of wanted) {
+        const product = catalog.find((row) => row.id === productId)
         if (!product) throw new Error('Product not found')
-        if (item.quantity > product.stock) throw new Error(`Insufficient stock for ${product.name}`)
-        priced.push({ productId: product.id, quantity: item.quantity, unitPrice: product.price, lineTotal: product.price * item.quantity })
+        if (quantity > product.stock) throw new Error(`Insufficient stock for ${product.name}`)
+        priced.push({ productId: product.id, quantity, unitPrice: product.price, lineTotal: product.price * quantity })
       }
 
       const total = priced.reduce((sum, item) => sum + item.lineTotal, 0)
@@ -224,12 +227,15 @@ export async function POST(request: Request) {
 
       await tx.insert(tabItems).values(priced.map((item) => ({ id: crypto.randomUUID(), tabId: created.id, userId: user.id, ...item })))
 
-      // Stock leaves the bar as soon as the drinks are poured.
+      // Stock leaves the bar as soon as the drinks are poured. The guarded write stops a
+      // concurrent till from selling the same bottle twice.
       for (const item of priced) {
-        await tx
+        const [reserved] = await tx
           .update(products)
           .set({ stock: sql`${products.stock} - ${item.quantity}`, updatedAt: new Date() })
-          .where(and(eq(products.id, item.productId), eq(products.userId, user.id)))
+          .where(and(eq(products.id, item.productId), eq(products.userId, user.id), gte(products.stock, item.quantity)))
+          .returning({ id: products.id })
+        if (!reserved) throw new Error(`Insufficient stock for ${catalog.find((row) => row.id === item.productId)?.name ?? 'item'}`)
         await tx.insert(stockMovements).values({
           id: crypto.randomUUID(),
           userId: user.id,

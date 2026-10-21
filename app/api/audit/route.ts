@@ -3,18 +3,20 @@ import { NextResponse } from 'next/server'
 import { authErrorResponse, requirePermission } from '@/lib/permissions'
 import { databaseErrorResponse } from '@/lib/db-errors'
 import { db } from '@/lib/db'
+import { addDays, startOfDay } from '@/lib/time'
 import { auditLogs, user as users } from '@/lib/db/schema'
 
 const DEFAULT_LIMIT = 100
 const MAX_LIMIT = 300
 
-/** Parse YYYY-MM-DD as UTC midnight, matching how the app derives business dates. */
+/** Parse a business date as the UTC instant of local midnight, matching the bar's timezone. */
 function boundary(value: string | null, exclusiveNextDay = false) {
   if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return null
-  const date = new Date(`${value}T00:00:00.000Z`)
-  if (Number.isNaN(date.getTime())) return null
-  if (exclusiveNextDay) date.setUTCDate(date.getUTCDate() + 1)
-  return date
+  // Noon UTC always falls on the same calendar date in the bar's zone.
+  const noon = new Date(`${value}T12:00:00.000Z`)
+  if (Number.isNaN(noon.getTime())) return null
+  const start = startOfDay(noon)
+  return exclusiveNextDay ? addDays(start, 1) : start
 }
 
 /**

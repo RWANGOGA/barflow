@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server'
 import { authErrorResponse, requirePermission } from '@/lib/permissions'
 import { auditEvent } from '@/lib/audit'
 import { db } from '@/lib/db'
+import { businessDate } from '@/lib/time'
 import { products, stockDeliveries, stockMovements, auditLogs } from '@/lib/db/schema'
 
 export async function GET() {
@@ -27,8 +28,13 @@ export async function POST(request: Request) {
     const quantity = Number(body.quantity)
     const costPrice = Number(body.cost_price)
     const productId = String(body.product_id ?? '')
+    const supplier = String(body.supplier ?? '').trim().slice(0, 120)
+    // A malformed date would reach a `date` column and fail the whole request at the driver.
+    const deliveryDate = typeof body.delivery_date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(body.delivery_date)
+      ? body.delivery_date
+      : businessDate()
 
-    if (!Number.isInteger(quantity) || quantity <= 0 || !Number.isFinite(costPrice) || costPrice < 0) {
+    if (!Number.isInteger(quantity) || quantity <= 0 || !Number.isInteger(costPrice) || costPrice < 0) {
       return NextResponse.json({ error: 'Invalid delivery values' }, { status: 400 })
     }
 
@@ -46,11 +52,11 @@ export async function POST(request: Request) {
         .values({
           id: crypto.randomUUID(),
           userId: user.id,
-          supplier: String(body.supplier ?? ''),
+          supplier,
           productId: product.id,
           quantity,
           costPrice,
-          deliveryDate: String(body.delivery_date ?? ''),
+          deliveryDate,
         })
         .returning()
 
@@ -73,8 +79,8 @@ export async function POST(request: Request) {
         action: 'delivery',
         entityType: 'stock_delivery',
         entityId: createdDelivery.id,
-        reason: String(body.supplier ?? ''),
-        metadata: { quantity, productId, costPrice, deliveryDate: String(body.delivery_date ?? '') },
+        reason: supplier || 'Delivery',
+        metadata: { quantity, productId, costPrice, deliveryDate },
         recordLabel: product.name,
         approval: 'Recorded',
       }))

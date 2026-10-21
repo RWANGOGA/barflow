@@ -1,48 +1,100 @@
-import { and, eq } from 'drizzle-orm'
+import { and, eq, gte, lt, sql } from 'drizzle-orm'
 import { NextResponse } from 'next/server'
 import { authErrorResponse, requirePermission } from '@/lib/permissions'
+import { databaseErrorResponse } from '@/lib/db-errors'
 import { db } from '@/lib/db'
-import { tradingDays, sales, saleItems, stockMovements } from '@/lib/db/schema'
+import { addDays, businessDate, startOfDay } from '@/lib/time'
+import { discounts, products, saleItems, sales, stockMovements, tradingDays } from '@/lib/db/schema'
+
+/** A business date as the UTC instant of local midnight, or null when the value is not a date. */
+function dayBounds(value: string | null) {
+  const date = value && /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : businessDate()
+  // Noon UTC always falls on the same calendar date in the bar's zone.
+  const start = startOfDay(new Date(`${date}T12:00:00.000Z`))
+  return { date, start, end: addDays(start, 1) }
+}
 
 export async function GET(request: Request) {
   try {
     const user = await requirePermission('reports.read')
     const userId = user.id
     const url = new URL(request.url)
-    const business_date = url.searchParams.get('business_date') ?? new Date().toISOString().slice(0, 10)
-    const day = await db.select().from(tradingDays).where(and(eq(tradingDays.userId, userId), eq(tradingDays.businessDate, business_date))).limit(1)
-    if (!day[0]) return NextResponse.json({ error: 'No business day found' }, { status: 404 })
-    const d = day[0]
-    const s = await db.select().from(sales).where(and(eq(sales.userId, userId), eq(sales.status, 'completed')))
-    const todaySales = s.filter((x: any) => String(x.createdAt).slice(0, 10) === business_date)
-    const orders = todaySales.length
-    const totalSales = todaySales.reduce((sum: number, x: any) => sum + x.total, 0)
-    const byPayment = Object.values(todaySales.reduce<Record<string, { orders: number; total: number }>>((result, sale: any) => {
-      const method = sale.paymentMethod
-      result[method] = result[method] || { orders: 0, total: 0 }
-      result[method].orders += 1
-      result[method].total += sale.total
+    const { date: businessDateValue, start, end } = dayBounds(url.searchParams.get('business_date'))
+
+    const [day] = await db
+      .select()
+      .from(tradingDays)
+      .where(and(eq(tradingDays.userId, userId), eq(tradingDays.businessDate, businessDateValue)))
+      .limit(1)
+    if (!day) return NextResponse.json({ error: 'No business day found' }, { status: 404 })
+
+    const inDay = [eq(sales.userId, userId), gte(sales.createdAt, start), lt(sales.createdAt, end)]
+
+    const [daySales, [discountTotals], [wastage], [costTotals]] = await Promise.all([
+      db
+        .select({ total: sales.total, paymentMethod: sales.paymentMethod, status: sales.status, voided: sales.voided })
+        .from(sales)
+        .where(and(...inDay)),
+      db
+        .select({
+          count: sql<number>`count(*)::int`,
+          value: sql<number>`coalesce(sum(${discounts.amount}), 0)::int`,
+        })
+        .from(discounts)
+        .where(and(eq(discounts.userId, userId), gte(discounts.createdAt, start), lt(discounts.createdAt, end))),
+      db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(stockMovements)
+        .where(and(eq(stockMovements.userId, userId), eq(stockMovements.movementType, 'wastage'), gte(stockMovements.createdAt, start), lt(stockMovements.createdAt, end))),
+      // Real cost of goods sold: the cost price of each item actually sold, not a fixed ratio.
+      db
+        .select({
+          revenue: sql<number>`coalesce(sum(${saleItems.lineTotal}), 0)::int`,
+          cost: sql<number>`coalesce(sum(${saleItems.quantity} * ${products.cost}), 0)::int`,
+        })
+        .from(saleItems)
+        .innerJoin(products, eq(products.id, saleItems.productId))
+        .innerJoin(sales, eq(sales.id, saleItems.saleId))
+        .where(and(
+          eq(saleItems.userId, userId),
+          eq(sales.userId, userId),
+          eq(sales.status, 'completed'),
+          eq(sales.voided, false),
+          gte(sales.createdAt, start),
+          lt(sales.createdAt, end),
+        )),
+    ])
+
+    // A voided sale keeps its 'completed' status, so the flag decides, not the status alone.
+    const paidSales = daySales.filter((sale) => sale.status === 'completed' && !sale.voided)
+    const orders = paidSales.length
+    const totalSales = paidSales.reduce((sum, sale) => sum + sale.total, 0)
+    const byPayment = Object.entries(paidSales.reduce<Record<string, { orders: number; total: number }>>((result, sale) => {
+      const row = result[sale.paymentMethod] ?? { orders: 0, total: 0 }
+      row.orders += 1
+      row.total += sale.total
+      result[sale.paymentMethod] = row
       return result
     }, {}))
-    const voids = todaySales.filter((sale: any) => sale.voided).length
-    const wastage = await db.select().from(stockMovements).where(and(eq(stockMovements.userId, userId), eq(stockMovements.movementType, 'wastage')))
-    const drinkSales = todaySales.reduce((sum: number, sale: any) => sum + sale.total, 0)
-    const drinkCost = todaySales.reduce((sum: number, sale: any) => sum + sale.total * 0.65, 0)
-    const pourCost = drinkSales > 0 ? drinkCost / drinkSales * 100 : 0
+    const voids = daySales.filter((sale) => sale.voided).length
+
+    const drinkSales = costTotals?.revenue ?? 0
+    const drinkCost = costTotals?.cost ?? 0
+    const pourCost = drinkSales > 0 ? Math.round((drinkCost / drinkSales) * 10000) / 100 : 0
 
     return NextResponse.json({
-      business_date,
+      business_date: businessDateValue,
       orders,
       total_sales: totalSales,
-      by_payment: Object.entries(byPayment).map(([method, totals]: [string, any]) => ({ payment_method: method, orders: totals.orders, total: totals.total })),
+      by_payment: byPayment.map(([method, totals]) => ({ payment_method: method, orders: totals.orders, total: totals.total })),
       voids,
-      discounts: 0,
-      wastage: wastage.length,
-      cash_variance: d.cashVariance ?? 0,
-      stock_variance_value: d.stockVarianceValue ?? 0,
-      pour_cost: Math.round(pourCost * 100) / 100,
+      discounts: discountTotals?.value ?? 0,
+      wastage: wastage?.count ?? 0,
+      cash_variance: day.cashVariance ?? 0,
+      stock_variance_value: day.stockVarianceValue ?? 0,
+      pour_cost: pourCost,
     })
   } catch (error) {
-    return authErrorResponse(error) ?? NextResponse.json({ error: 'Could not generate report' }, { status: 400 })
+    return authErrorResponse(error) ?? databaseErrorResponse(error) ?? NextResponse.json({ error: 'Could not generate report' }, { status: 400 })
   }
 }

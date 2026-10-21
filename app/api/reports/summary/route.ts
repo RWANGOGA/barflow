@@ -1,23 +1,47 @@
-import { and, eq, gte, lte } from 'drizzle-orm'
+import { and, eq, gte, lt } from 'drizzle-orm'
 import { NextResponse } from 'next/server'
 import { authErrorResponse, requirePermission } from '@/lib/permissions'
+import { databaseErrorResponse } from '@/lib/db-errors'
 import { db } from '@/lib/db'
+import { addDays, startOfDay } from '@/lib/time'
 import { saleItems, sales } from '@/lib/db/schema'
+
+/** A business date as the UTC instant of local midnight, or null when the value is not a date. */
+function boundary(value: string | null) {
+  if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return null
+  return startOfDay(new Date(`${value}T12:00:00.000Z`))
+}
 
 export async function GET(request: Request) {
   try {
     const user = await requirePermission('reports.read')
     const url = new URL(request.url)
-    const from = url.searchParams.get('from')
-    const to = url.searchParams.get('to')
-    const conditions = [eq(sales.userId, user.id), eq(sales.status, 'completed')]
-    if (from) conditions.push(gte(sales.createdAt, new Date(`${from}T00:00:00.000Z`)))
-    if (to) conditions.push(lte(sales.createdAt, new Date(`${to}T23:59:59.999Z`)))
+    const from = boundary(url.searchParams.get('from'))
+    const to = boundary(url.searchParams.get('to'))
 
-    const saleRows = await db.select().from(sales).where(and(...conditions))
-    const saleIds = new Set(saleRows.map((sale) => sale.id))
-    const itemRows = saleIds.size ? await db.select().from(saleItems).where(eq(saleItems.userId, user.id)) : []
-    const items = itemRows.filter((item) => saleIds.has(item.saleId))
+    const conditions = [eq(sales.userId, user.id), eq(sales.status, 'completed'), eq(sales.voided, false)]
+    if (from) conditions.push(gte(sales.createdAt, from))
+    // `to` is a business date, so the range includes that whole local day.
+    if (to) conditions.push(lt(sales.createdAt, addDays(to, 1)))
+
+    // Sale lines are filtered in SQL: loading the whole item history to throw most of it away
+    // gets slower every month.
+    const [saleRows, items] = await Promise.all([
+      db.select().from(sales).where(and(...conditions)),
+      db
+        .select({
+          saleId: saleItems.saleId,
+          productId: saleItems.productId,
+          productName: saleItems.productName,
+          category: saleItems.category,
+          quantity: saleItems.quantity,
+          lineTotal: saleItems.lineTotal,
+        })
+        .from(saleItems)
+        .innerJoin(sales, eq(sales.id, saleItems.saleId))
+        .where(and(eq(saleItems.userId, user.id), ...conditions)),
+    ])
+
     const byPayment = Object.entries(saleRows.reduce<Record<string, number>>((result, sale) => {
       result[sale.paymentMethod] = (result[sale.paymentMethod] ?? 0) + sale.total
       return result
@@ -36,17 +60,18 @@ export async function GET(request: Request) {
       result[item.productId] = row
       return result
     }, {}))
+    const total = saleRows.reduce((sum, sale) => sum + sale.total, 0)
 
     return NextResponse.json({
       orders: saleRows.length,
-      total: saleRows.reduce((sum, sale) => sum + sale.total, 0),
-      average_order: saleRows.length ? Math.round(saleRows.reduce((sum, sale) => sum + sale.total, 0) / saleRows.length) : 0,
+      total,
+      average_order: saleRows.length ? Math.round(total / saleRows.length) : 0,
       items_sold: items.reduce((sum, item) => sum + item.quantity, 0),
       by_payment: byPayment,
       by_category: byCategory,
       by_product: byProduct,
     })
   } catch (error) {
-    return authErrorResponse(error) ?? NextResponse.json({ error: 'Could not load report summary' }, { status: 500 })
+    return authErrorResponse(error) ?? databaseErrorResponse(error) ?? NextResponse.json({ error: 'Could not load report summary' }, { status: 500 })
   }
 }

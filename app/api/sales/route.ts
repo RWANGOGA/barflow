@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { and, desc, eq, sql } from 'drizzle-orm'
+import { and, desc, eq, gte, sql } from 'drizzle-orm'
 import { NextResponse } from 'next/server'
 import { authErrorResponse, requirePermission } from '@/lib/permissions'
 import { databaseErrorResponse } from '@/lib/db-errors'
@@ -24,7 +24,7 @@ export async function POST(request: Request) {
     if (await isDayLocked(userId)) return NextResponse.json({ error: DAY_LOCKED_ERROR }, { status: 409 })
     const body = await request.json()
     const requestedItems: { productId: string; quantity: number; note: string | null }[] = Array.isArray(body.items)
-      ? body.items.slice(0, 100).map((item: any) => ({ productId: String(item.productId), quantity: Number(item.quantity), note: item.note ? String(item.note) : null }))
+      ? body.items.slice(0, 100).map((item: any) => ({ productId: String(item.productId), quantity: Number(item.quantity), note: item.note ? String(item.note).slice(0, 200) : null }))
       : []
     const normalisePayment = (value: unknown) => String(value).trim().toLowerCase().replaceAll(' ', '_')
     const requestedPayments: { method: string; amount: number }[] | null = Array.isArray(body.payment_items)
@@ -42,11 +42,21 @@ export async function POST(request: Request) {
     if (requestedItems.length === 0 || requestedItems.some((item) => !item.productId || !Number.isInteger(item.quantity) || item.quantity <= 0)) {
       return NextResponse.json({ error: 'Invalid sale items' }, { status: 400 })
     }
+    // The same drink can be scanned twice; price it once and guard the combined quantity.
+    const requested = new Map<string, { quantity: number; note: string | null }>()
+    for (const item of requestedItems) {
+      const current = requested.get(item.productId)
+      requested.set(item.productId, {
+        quantity: (current?.quantity ?? 0) + item.quantity,
+        note: item.note ?? current?.note ?? null,
+      })
+    }
     const catalog = await db.select().from(products).where(eq(products.userId, userId))
-    const items = requestedItems.map((item) => {
-      const product = catalog.find((row) => row.id === item.productId)
-      if (!product || item.quantity > product.stock) throw new Error('Insufficient stock')
-      return { productId: product.id, name: product.name, category: product.category, quantity: item.quantity, price: product.price, lineTotal: product.price * item.quantity, note: item.note }
+    const items = [...requested].map(([productId, request]) => {
+      const product = catalog.find((row) => row.id === productId)
+      if (!product) throw new Error(`Product not found: ${productId}`)
+      if (request.quantity > product.stock) throw new Error(`Insufficient stock for ${product.name}`)
+      return { productId: product.id, name: product.name, category: product.category, quantity: request.quantity, price: product.price, lineTotal: product.price * request.quantity, note: request.note }
     })
     const total = items.reduce((sum, item) => sum + item.lineTotal, 0)
     if (!Number.isInteger(total) || total <= 0) return NextResponse.json({ error: 'Invalid total' }, { status: 400 })
@@ -68,7 +78,7 @@ export async function POST(request: Request) {
       changeDue = tenderedAmount - cashPortion
     }
 
-    const sale = { id: crypto.randomUUID(), userId, paymentMethod, total, tableLabel: body.tableLabel ? String(body.tableLabel) : null, status: 'completed', tenderedAmount, changeDue, idempotencyKey }
+    const sale = { id: crypto.randomUUID(), userId, paymentMethod, total, tableLabel: body.tableLabel ? String(body.tableLabel).trim().slice(0, 60) || null : null, status: 'completed', tenderedAmount, changeDue, idempotencyKey }
     const requestHash = createHash('sha256').update(JSON.stringify({ items, paymentItems, total })).digest('hex')
     let receiptNumber = 0
     let replayed: Record<string, unknown> | null = null
@@ -96,7 +106,13 @@ export async function POST(request: Request) {
       await tx.insert(salePayments).values(paymentItems.map((payment) => ({ id: crypto.randomUUID(), userId, saleId: sale.id, method: payment.method, amount: payment.amount })))
       await tx.insert(saleItems).values(items.map((item) => ({ id: crypto.randomUUID(), userId, saleId: sale.id, productId: item.productId, productName: item.name, category: item.category, unitPrice: item.price, quantity: item.quantity, lineTotal: item.lineTotal, note: item.note })))
       for (const item of items) {
-        await tx.update(products).set({ stock: sql`${products.stock} - ${item.quantity}`, updatedAt: new Date() }).where(and(eq(products.id, item.productId), eq(products.userId, userId)))
+        // The check above can lose a race with another till; this guarded write cannot.
+        const [reserved] = await tx
+          .update(products)
+          .set({ stock: sql`${products.stock} - ${item.quantity}`, updatedAt: new Date() })
+          .where(and(eq(products.id, item.productId), eq(products.userId, userId), gte(products.stock, item.quantity)))
+          .returning({ id: products.id })
+        if (!reserved) throw new Error(`Insufficient stock for ${item.name}`)
         await tx.insert(stockMovements).values({ id: crypto.randomUUID(), userId, productId: item.productId, quantity: -item.quantity, movementType: 'sale', reference: sale.id })
       }
       const counter = await tx.execute(sql`INSERT INTO bar_receipt_counter (user_id, next_number) VALUES (${userId}, 1) ON CONFLICT (user_id) DO UPDATE SET next_number = bar_receipt_counter.next_number + 1 RETURNING next_number`)

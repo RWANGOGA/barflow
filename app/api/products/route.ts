@@ -40,21 +40,23 @@ export async function POST(request: Request) {
     const product = {
       id: String(body.id ?? ''),
       userId: user.id,
-      name: String(body.name ?? ''),
-      category: String(body.category ?? ''),
+      name: String(body.name ?? '').trim().slice(0, 80),
+      category: String(body.category ?? '').trim().slice(0, 40),
       price: Number(body.price),
       stock: Number(body.stock),
       reorder: Number(body.reorder),
       cost: Number(body.cost),
-      unit: String(body.unit ?? ''),
-      tone: String(body.tone ?? 'slate'),
+      unit: String(body.unit ?? '').trim().slice(0, 20),
+      tone: String(body.tone ?? 'slate').trim().slice(0, 20) || 'slate',
     }
 
     if (!product.id || !product.name || !product.category || !product.unit) {
       return NextResponse.json({ error: 'Invalid product' }, { status: 400 })
     }
     const amounts = [product.price, product.stock, product.reorder, product.cost]
-    if (!amounts.every((amount) => Number.isInteger(amount)) || product.price <= 0 || product.stock < 0 || product.reorder < 0 || product.cost < 0) {
+    // Integer columns are 32-bit; an out-of-range value would fail the insert instead of the check.
+    const inRange = (amount: number) => Number.isInteger(amount) && amount >= 0 && amount <= 100_000_000
+    if (!amounts.every(inRange) || product.price <= 0) {
       return NextResponse.json({ error: 'Price, stock, reorder level and cost must be whole numbers within range' }, { status: 400 })
     }
 
