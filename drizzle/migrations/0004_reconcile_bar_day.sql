@@ -33,4 +33,14 @@ ALTER TABLE "bar_day" ADD COLUMN IF NOT EXISTS "variance_reason" text;--> statem
 ALTER TABLE "bar_day" ADD COLUMN IF NOT EXISTS "locked" boolean DEFAULT false NOT NULL;--> statement-breakpoint
 ALTER TABLE "bar_day" ADD COLUMN IF NOT EXISTS "closed_at" timestamp with time zone;--> statement-breakpoint
 ALTER TABLE "bar_day" ADD COLUMN IF NOT EXISTS "opened_at" timestamp with time zone DEFAULT now() NOT NULL;--> statement-breakpoint
+-- A database that predates this index can hold several open days for one user; keep the newest.
+UPDATE "bar_day" AS day
+SET "status" = 'closed', "locked" = true, "closed_at" = COALESCE(day."closed_at", now())
+WHERE day."status" = 'open'
+  AND EXISTS (
+    SELECT 1 FROM "bar_day" AS newer
+    WHERE newer."user_id" = day."user_id"
+      AND newer."status" = 'open'
+      AND (newer."opened_at", newer."id") > (day."opened_at", day."id")
+  );--> statement-breakpoint
 CREATE UNIQUE INDEX IF NOT EXISTS "bar_day_one_open_idx" ON "bar_day" USING btree ("user_id") WHERE "bar_day"."status" = 'open';
