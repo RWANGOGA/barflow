@@ -1,9 +1,9 @@
-import { createHash, timingSafeEqual } from 'node:crypto'
 import { and, eq } from 'drizzle-orm'
 import { headers } from 'next/headers'
 import { NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
 import { db } from '@/lib/db'
+import { hashPin, isLegacyPinHash, verifyPin } from '@/lib/pin'
 import { user as users, userPins } from '@/lib/db/schema'
 
 export type Role = 'Admin' | 'Manager' | 'Cashier' | 'Storekeeper'
@@ -115,7 +115,7 @@ export async function requirePermission(permission: Permission) {
   return requireRole([...PERMISSION_ROLES[permission]])
 }
 
-/** Verify a PIN against the account's stored SHA-256 digest. */
+/** Verify an approval PIN, upgrading a legacy SHA-256 digest after a successful check. */
 export async function verifyUserPin(userId: string, pin: unknown) {
   if (typeof pin !== 'string' || pin.length === 0) return false
 
@@ -125,11 +125,13 @@ export async function verifyUserPin(userId: string, pin: unknown) {
     .where(eq(userPins.userId, userId))
     .limit(1)
 
-  if (!stored || !/^[a-f0-9]{64}$/i.test(stored.pinHash)) return false
+  if (!stored || !verifyPin(pin, stored.pinHash)) return false
 
-  const expected = Buffer.from(stored.pinHash, 'hex')
-  const actual = createHash('sha256').update(pin).digest()
-  return expected.length === actual.length && timingSafeEqual(expected, actual)
+  if (isLegacyPinHash(stored.pinHash)) {
+    await db.update(userPins).set({ pinHash: hashPin(pin) }).where(eq(userPins.userId, userId))
+  }
+
+  return true
 }
 
 /** Convert access denials into HTTP responses; leave operational errors to callers. */

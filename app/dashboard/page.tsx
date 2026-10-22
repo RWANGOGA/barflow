@@ -3,7 +3,7 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import { signOut, useSession } from '@/lib/auth-client'
 import { Stock } from '@/components/stock/stock'
-import { TriangleAlert as AlertTriangle, ArrowDownToLine, ChartBar as BarChart3, Check, ChevronDown, ClipboardCheck, ClipboardList, Clock, CreditCard, Database, Download, Eye, EyeOff, FileText, KeyRound, LayoutDashboard, Loader2, Lock, LogOut, Menu, Package, Plus, Printer, ReceiptText, RefreshCw, Save, Search, Settings, ShieldCheck, ShoppingBag, SlidersHorizontal, Tags, TrendingDown, TrendingUp, UserRound, UsersRound, Wallet, Wine, X } from 'lucide-react'
+import { TriangleAlert as AlertTriangle, ArrowDownToLine, ChartBar as BarChart3, Check, ChevronDown, ClipboardCheck, ClipboardList, Clock, CreditCard, Database, Download, Eye, EyeOff, FileText, KeyRound, LayoutDashboard, Loader2, Lock, LogOut, Menu, Package, Plus, Printer, ReceiptText, RefreshCw, Save, Search, Settings, ShieldCheck, ShoppingBag, SlidersHorizontal, Tags, Trash2, TrendingDown, TrendingUp, UserRound, UsersRound, Wallet, Wine, X } from 'lucide-react'
 
 type Product = { id:string; name:string; category:string; price:number; stock:number; reorder:number; cost:number; unit:string; tone:string; note?:string }
 type Role = 'Admin'|'Cashier'|'Manager'|'Storekeeper'
@@ -430,6 +430,28 @@ function Audit(){
   </TablePage>
 }
 type Preferences={currency:string;barName:string}
+const EXPORT_TABLES=[
+  {id:'bar_product',label:'Products'},
+  {id:'bar_sale',label:'Sales'},
+  {id:'bar_sale_item',label:'Sale line items'},
+  {id:'bar_sale_payment',label:'Sale payments'},
+  {id:'bar_tab',label:'Tabs'},
+  {id:'bar_tab_item',label:'Tab items'},
+  {id:'bar_stock_movement',label:'Stock movements'},
+  {id:'bar_stock_delivery',label:'Deliveries'},
+  {id:'bar_stock_transfer',label:'Transfers'},
+  {id:'bar_stock_count',label:'Daily stock counts'},
+  {id:'bar_inventory_count',label:'Inventory counts'},
+  {id:'bar_stock_adjustment',label:'Stock adjustments'},
+  {id:'bar_menu_stock_link',label:'Menu–stock links'},
+  {id:'bar_day',label:'Trading days'},
+  {id:'bar_discount',label:'Discounts'},
+  {id:'bar_receipts',label:'Receipts'},
+  {id:'bar_team_member',label:'Team members'},
+  {id:'bar_variance_tolerance',label:'Variance tolerances'},
+  {id:'bar_variance_history',label:'Variance history'},
+  {id:'bar_audit_log',label:'Audit log'},
+] as const
 const settingsLabel='text-[11px] font-bold uppercase tracking-wide text-[#57606a]'
 const settingsFactLabel='text-[10px] font-bold uppercase tracking-wide text-[#57606a]'
 const settingsField='h-10 w-full rounded-md border border-[#d0d7de] bg-white px-3 text-sm outline-none transition focus:border-[#0969da] focus:ring-2 focus:ring-[#0969da]/20 disabled:bg-[#f6f8fa]'
@@ -465,12 +487,22 @@ function SettingsPage({toast,user,role,currency,businessName,onPreferencesSaved}
   const [saved,setSaved]=useState<Preferences>({currency:initial.current.currency,barName:initial.current.businessName});
   const [draft,setDraft]=useState<Preferences>({currency:initial.current.currency,barName:initial.current.businessName});
   const [saving,setSaving]=useState(false);
+  const [saveError,setSaveError]=useState('');
+  const [lastSavedAt,setLastSavedAt]=useState<Date|null>(null);
   const [hasPin,setHasPin]=useState<boolean|null>(null);
   const [pinError,setPinError]=useState('');
+  const [currentPin,setCurrentPin]=useState('');
   const [pin,setPin]=useState('');
   const [confirmPin,setConfirmPin]=useState('');
   const [revealPin,setRevealPin]=useState(false);
   const [savingPin,setSavingPin]=useState(false);
+  const [removingPin,setRemovingPin]=useState(false);
+  const [confirmRemovePin,setConfirmRemovePin]=useState(false);
+  const [exportFrom,setExportFrom]=useState('');
+  const [exportTo,setExportTo]=useState('');
+  const [exportPicked,setExportPicked]=useState<string[]>(EXPORT_TABLES.map(table=>table.id));
+  const [exportError,setExportError]=useState('');
+  const [showExportTables,setShowExportTables]=useState(false);
   const [loggingOut,setLoggingOut]=useState(false);
   useEffect(()=>{
     let active=true;
@@ -487,6 +519,8 @@ function SettingsPage({toast,user,role,currency,businessName,onPreferencesSaved}
       const next:Preferences={currency:normalizeCurrency(items.get('currency'))||initial.current.currency,barName:loadedName||BAR_NAME_FALLBACK};
       if(!active)return;
       setSaved(next); setDraft(next);
+      const stamps=(data?.items??[]).map((row:any)=>row?.updatedAt?new Date(row.updatedAt).getTime():0).filter(Boolean);
+      setLastSavedAt(stamps.length?new Date(Math.max(...stamps)):null);
       setTimeZone(String(data?.timeZone??'Africa/Kampala'));
       setBusinessDate(String(data?.businessDate??''));
       if(dayRes.ok){const record=await dayRes.json().catch(()=>null); if(active)setTradingDay(record??null)}
@@ -501,39 +535,81 @@ function SettingsPage({toast,user,role,currency,businessName,onPreferencesSaved}
   const canSave=dirty&&!saving&&Boolean(currencyDraft)&&nameValid;
   const pinValid=/^\d{4,8}$/.test(pin);
   const pinMatches=pin.length>0&&pin===confirmPin;
+  const currentPinReady=!hasPin||/^\d{4,8}$/.test(currentPin);
+  const exportAll=exportPicked.length===EXPORT_TABLES.length;
+  const exportRangeInvalid=Boolean(exportFrom&&exportTo&&exportFrom>exportTo);
   const pinMessage=pinError||(!pin?'Use 4 to 8 digits.':!pinValid?'A PIN must be 4 to 8 digits.':!pinMatches?'The two PINs do not match.':pin.length<6?'Short PINs are easy to guess.':'PINs match. Ready to save.');
   const savePreferences=async()=>{
-    if(!currencyDraft){toast('Enter a 2–5 letter currency code such as UGX.'); return}
-    if(!nameValid){toast('The business name needs at least 2 characters.'); return}
+    if(!currencyDraft){setSaveError('Enter a 2–5 letter currency code such as UGX.'); return}
+    if(!nameValid){setSaveError('The business name needs at least 2 characters.'); return}
     const wanted:Preferences={currency:currencyDraft,barName:nameDraft};
-    const updates:[string,string][]=[];
-    if(wanted.currency!==saved.currency)updates.push(['currency',wanted.currency]);
-    if(wanted.barName!==saved.barName)updates.push(['bar_name',wanted.barName]);
-    setSaving(true);
-    const applied:Preferences={...saved};
-    let failure='';
-    for(const [key,value] of updates){
-      try{
-        const result=await fetch('/api/settings',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({key,value})});
-        if(!result.ok){const body=await result.json().catch(()=>({})); failure=body?.error??'Could not save settings.'; break}
-        if(key==='currency')applied.currency=value; else applied.barName=value;
-      }catch{failure='Could not reach the server. Check your connection and retry.'; break}
-    }
-    setSaving(false); setSaved(applied); setDraft(applied);
-    if(applied.currency!==saved.currency||applied.barName!==saved.barName)onPreferencesSaved(applied);
-    toast(failure||'Settings saved for this account.');
+    const items:Record<string,string>={};
+    if(wanted.currency!==saved.currency)items.currency=wanted.currency;
+    if(wanted.barName!==saved.barName)items.bar_name=wanted.barName;
+    if(!Object.keys(items).length){setSaveError(''); return}
+    setSaving(true); setSaveError('');
+    try{
+      const result=await fetch('/api/settings',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({items})});
+      if(!result.ok){const body=await result.json().catch(()=>({})); setSaveError(body?.error??'Could not save settings.'); return}
+      const data=await result.json().catch(()=>({items:[]}));
+      const stored:Preferences={...saved};
+      for(const row of (data?.items??[]) as {key:string;value:string}[]){
+        if(row.key==='currency')stored.currency=normalizeCurrency(row.value)||stored.currency;
+        if(row.key==='bar_name')stored.barName=applyBarName(row.value);
+      }
+      // A batch is all-or-nothing, so the draft can safely mirror what the server stored.
+      setSaved(stored); setDraft(stored);
+      setLastSavedAt(new Date());
+      onPreferencesSaved(stored);
+      toast('Settings saved. New prices and receipts use these values.');
+    }catch{setSaveError('Could not reach the server. Your changes are still here — try again.')}
+    finally{setSaving(false)}
   };
   const discardPreferences=()=>setDraft(saved);
   const savePin=async()=>{
     if(!pinValid){setPinError('A PIN must be 4 to 8 digits.'); return}
     if(!pinMatches){setPinError('The two PINs do not match.'); return}
-    setSavingPin(true); setPinError('');
+    if(!currentPinReady){setPinError('Enter your current PIN before choosing a new one.'); return}
+    setSavingPin(true); setPinError(''); setConfirmRemovePin(false);
     try{
-      const result=await fetch('/api/team/pin',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({pin})});
+      const result=await fetch('/api/team/pin',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(hasPin?{pin,currentPin}:{pin})});
       if(!result.ok){const body=await result.json().catch(()=>({})); throw new Error(body?.error??'Could not save the approval PIN.')}
-      setHasPin(true); setPin(''); setConfirmPin(''); setRevealPin(false); toast('Approval PIN saved.');
+      setHasPin(true); setCurrentPin(''); setPin(''); setConfirmPin(''); setRevealPin(false); toast('Approval PIN saved.');
     }catch(error:any){setPinError(error?.message??'Could not save the approval PIN.')}
     finally{setSavingPin(false)}
+  };
+  const removePin=async()=>{
+    if(!hasPin){setPinError('There is no PIN to remove.'); return}
+    if(!/^\d{4,8}$/.test(currentPin)){setPinError('Enter your current PIN to remove it.'); return}
+    setRemovingPin(true); setPinError('');
+    try{
+      const result=await fetch('/api/team/pin',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({remove:true,currentPin})});
+      if(!result.ok){const body=await result.json().catch(()=>({})); throw new Error(body?.error??'Could not remove the approval PIN.')}
+      setHasPin(false); setCurrentPin(''); setPin(''); setConfirmPin(''); setRevealPin(false); setConfirmRemovePin(false);
+      toast('Approval PIN removed. Manager voids will be refused until you set a new one.');
+    }catch(error:any){setPinError(error?.message??'Could not remove the approval PIN.')}
+    finally{setRemovingPin(false)}
+  };
+  const shiftIsoDate=(date:string,days:number)=>{const shifted=new Date(`${date}T12:00:00Z`); shifted.setUTCDate(shifted.getUTCDate()+days); return shifted.toISOString().slice(0,10)};
+  const applyExportRange=(days:number|null)=>{
+    if(days===null){setExportFrom(''); setExportTo(''); setExportError(''); return}
+    const end=businessDate||new Date().toISOString().slice(0,10);
+    setExportTo(end); setExportFrom(shiftIsoDate(end,-(days-1))); setExportError('');
+  };
+  const toggleExportTable=(id:string)=>{
+    setExportPicked(current=>current.includes(id)?current.filter(value=>value!==id):[...current,id]);
+    setExportError('');
+  };
+  const runExport=()=>{
+    if(!exportPicked.length){setExportError('Choose at least one table to export.'); return}
+    if(exportRangeInvalid){setExportError('The start date must be on or before the end date.'); return}
+    const params=new URLSearchParams();
+    if(exportFrom)params.set('from',exportFrom);
+    if(exportTo)params.set('to',exportTo);
+    if(!exportAll)params.set('tables',exportPicked.join(','));
+    const query=params.toString();
+    setExportError('');
+    window.location.assign(`/api/export${query?`?${query}`:''}`);
   };
   const logout=async()=>{setLoggingOut(true); try{await signOut(); window.location.assign('/sign-in')}catch{toast('Could not sign out. Please try again.'); setLoggingOut(false)}};
   if(loading) return <Shell eyebrow="Manager workspace" title="Settings" sub="Preferences, approvals, and account controls for this bar."><SettingsSkeleton/></Shell>;
@@ -547,13 +623,34 @@ function SettingsPage({toast,user,role,currency,businessName,onPreferencesSaved}
         </div>
       : <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1.25fr)_minmax(0,1fr)]">
           <div className="flex flex-col gap-5">
-            <SettingCard icon={Wallet} title="Preferences" sub="Currency and receipt header for everything you print and see." action={<span className={`rounded-full px-2.5 py-1 text-[10px] font-bold uppercase ${dirty?'bg-[#fff8c5] text-[#9a6700]':'bg-[#dafbe1] text-[#1a7f37]'}`}>{dirty?'Unsaved':'Saved'}</span>}>
+            <SettingCard icon={Wallet} title="Preferences" sub="Applies to this account: the currency used for prices and the header printed on receipts." action={<span className={`rounded-full px-2.5 py-1 text-[10px] font-bold uppercase ${dirty?'bg-[#fff8c5] text-[#9a6700]':'bg-[#dafbe1] text-[#1a7f37]'}`}>{dirty?'Unsaved':'Saved'}</span>}>
               <div className="grid gap-4 sm:grid-cols-2">
-                <label className="block"><span className={settingsLabel}>Business name</span><input value={draft.barName} onChange={event=>setDraft({...draft,barName:event.target.value})} maxLength={60} disabled={saving} placeholder="THE SIPPER" className={`mt-2 ${settingsField}`}/><span className="mt-1.5 block text-[11px] leading-relaxed text-[#57606a]">Printed at the top of every receipt and bar ticket.</span></label>
-                <label className="block"><span className={settingsLabel}>Currency</span><input list="currency-options" value={draft.currency} onChange={event=>setDraft({...draft,currency:event.target.value.toUpperCase()})} maxLength={5} disabled={saving} placeholder="UGX" className={`mt-2 ${settingsField} uppercase tracking-wide`}/><datalist id="currency-options">{CURRENCY_OPTIONS.map(code=><option key={code} value={code}/>)}</datalist><span className="mt-1.5 block text-[11px] leading-relaxed text-[#57606a]">Prices show as <b className="text-[#57606a]">{currencyDraft||'???'} 12,000</b>.</span></label>
+                <label className="block"><span className={settingsLabel}>Business name</span><input value={draft.barName} onChange={event=>{setDraft({...draft,barName:event.target.value}); setSaveError('')}} maxLength={60} disabled={saving} placeholder="THE SIPPER" className={`mt-2 ${settingsField}`}/><span className="mt-1.5 block text-[11px] leading-relaxed text-[#57606a]">Printed at the top of every receipt and bar ticket.</span>{!nameValid&&nameDraft.length>0&&<span className="mt-1 block text-[11px] font-semibold text-[#cf222e]">Use at least 2 characters.</span>}</label>
+                <label className="block"><span className={settingsLabel}>Currency</span><input list="currency-options" value={draft.currency} onChange={event=>{setDraft({...draft,currency:event.target.value.toUpperCase()}); setSaveError('')}} maxLength={5} disabled={saving} placeholder="UGX" className={`mt-2 ${settingsField} uppercase tracking-wide`}/><datalist id="currency-options">{CURRENCY_OPTIONS.map(code=><option key={code} value={code}/>)}</datalist><span className="mt-1.5 block text-[11px] leading-relaxed text-[#57606a]">Prices show as <b className="text-[#57606a]">{currencyDraft||'???'} 12,000</b>.</span></label>
               </div>
+              <div className="mt-4 grid gap-3 sm:grid-cols-[minmax(0,1fr)_210px]">
+                <div className="rounded-md border border-[#d0d7de] bg-[#f6f8fa] p-4">
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-[#57606a]">What this changes</p>
+                  <ul className="mt-2 space-y-1.5 text-[11px] leading-relaxed text-[#57606a]">
+                    <li>Prices, totals, and stock values use {currencyDraft||'—'}.</li>
+                    <li>Receipts and bar tickets print “{nameDraft||saved.barName}”.</li>
+                    <li>Completed sales keep the amounts they were recorded with.</li>
+                  </ul>
+                </div>
+                <div className="rounded-md border border-[#d0d7de] bg-white p-4 text-center shadow-[0_1px_0_rgba(27,31,36,.04)]">
+                  <p className="truncate font-serif text-[13px] font-bold uppercase tracking-wide">{nameDraft||saved.barName}</p>
+                  <p className="mt-0.5 text-[9px] uppercase tracking-[.14em] text-[#57606a]">Bar receipt · sample</p>
+                  <div className="mt-3 flex justify-between text-[10px] text-[#57606a]"><span>Nile Special × 2</span><span>{currencyDraft||'—'} 10,000</span></div>
+                  <div className="mt-2 flex justify-between border-t border-dashed border-[#d0d7de] pt-2 text-[11px] font-bold"><span>Total</span><span>{currencyDraft||'—'} 10,000</span></div>
+                </div>
+              </div>
+              {currencyDraft&&currencyDraft!==saved.currency&&<div className="mt-3 rounded-md border border-[#f0d58c] bg-[#fff8c5] px-3 py-2.5">
+                <p className="text-[11px] font-bold text-[#9a6700]">Currency changes relabel, they do not convert.</p>
+                <p className="mt-1 text-[11px] leading-relaxed text-[#9a6700]">A 5,000 price becomes {currencyDraft} 5,000. Update the price list first if this is a real currency switch.</p>
+              </div>}
+              {saveError&&<p role="alert" className="mt-4 rounded-md border border-[#ffcecb] bg-[#ffebe9] px-3 py-2 text-xs font-semibold text-[#cf222e]">{saveError}</p>}
               <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-[#eaeef2] pt-4">
-                <span className={`text-xs font-semibold ${dirty?'text-[#9a6700]':'text-[#57606a]'}`}>{dirty?'You have unsaved changes.':'Up to date on this device.'}</span>
+                <span className={`text-xs font-semibold ${dirty?'text-[#9a6700]':'text-[#57606a]'}`}>{dirty?'You have unsaved changes.':lastSavedAt?`Saved ${lastSavedAt.toLocaleString([], {day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})}.`:'Up to date.'}</span>
                 <div className="flex gap-2">
                   <button type="button" onClick={discardPreferences} disabled={!dirty||saving} className="rounded-md border border-[#d0d7de] px-4 py-2.5 text-sm font-bold text-[#57606a] transition hover:bg-[#f6f8fa] disabled:cursor-not-allowed disabled:opacity-40">Discard</button>
                   <button type="button" onClick={savePreferences} disabled={!canSave} className="inline-flex items-center gap-2 rounded-md bg-[#1f883d] px-4 py-2.5 text-sm font-bold text-white transition hover:bg-[#1a7f37] disabled:cursor-not-allowed disabled:opacity-40">{saving?<Loader2 className="size-4 animate-spin"/>:<Save className="size-4"/>}{saving?'Saving…':'Save changes'}</button>
@@ -562,13 +659,19 @@ function SettingsPage({toast,user,role,currency,businessName,onPreferencesSaved}
             </SettingCard>
             <SettingCard icon={Lock} title="Approval PIN" sub="Required when a manager voids a tab or approves a sensitive action." action={<span className={`rounded-full px-2.5 py-1 text-[10px] font-bold uppercase ${hasPin===null?'bg-[#f6f8fa] text-[#57606a]':hasPin?'bg-[#dafbe1] text-[#1a7f37]':'bg-[#fff8c5] text-[#9a6700]'}`}>{hasPin===null?'Unknown':hasPin?'PIN set':'No PIN'}</span>}>
               <div className="grid gap-4 sm:grid-cols-2">
-                <label className="block"><span className={settingsLabel}>New PIN</span><div className="relative mt-2"><input type={revealPin?'text':'password'} inputMode="numeric" autoComplete="new-password" maxLength={8} value={pin} onChange={event=>{setPin(event.target.value.replace(/\D/g,'').slice(0,8)); setPinError('')}} placeholder="4–8 digits" className={`${settingsField} pr-12 tracking-[.2em]`}/><button type="button" aria-label={revealPin?'Hide PIN':'Show PIN'} onClick={()=>setRevealPin(value=>!value)} className="absolute inset-y-0 right-0 flex w-12 items-center justify-center text-[#57606a] transition hover:text-[#57606a]">{revealPin?<EyeOff className="size-4"/>:<Eye className="size-4"/>}</button></div></label>
+                {hasPin&&<label className="block sm:col-span-2"><span className={settingsLabel}>Current PIN</span><input type={revealPin?'text':'password'} inputMode="numeric" autoComplete="current-password" maxLength={8} value={currentPin} onChange={event=>{setCurrentPin(event.target.value.replace(/\D/g,'').slice(0,8)); setPinError(''); setConfirmRemovePin(false)}} placeholder="The PIN you use today" className={`mt-2 ${settingsField} tracking-[.2em]`}/><span className="mt-1.5 block text-[11px] leading-relaxed text-[#57606a]">Needed before this PIN can be replaced or removed.</span></label>}
+                <label className="block"><span className={settingsLabel}>New PIN</span><div className="relative mt-2"><input type={revealPin?'text':'password'} inputMode="numeric" autoComplete="new-password" maxLength={8} value={pin} onChange={event=>{setPin(event.target.value.replace(/\D/g,'').slice(0,8)); setPinError('')}} placeholder="4–8 digits" className={`${settingsField} pr-12 tracking-[.2em]`}/><button type="button" aria-label={revealPin?'Hide PIN':'Show PIN'} onClick={()=>setRevealPin(value=>!value)} className="absolute inset-y-0 right-0 flex w-12 items-center justify-center text-[#57606a] transition hover:text-[#1f2328]">{revealPin?<EyeOff className="size-4"/>:<Eye className="size-4"/>}</button></div></label>
                 <label className="block"><span className={settingsLabel}>Confirm PIN</span><input type={revealPin?'text':'password'} inputMode="numeric" autoComplete="new-password" maxLength={8} value={confirmPin} onChange={event=>{setConfirmPin(event.target.value.replace(/\D/g,'').slice(0,8)); setPinError('')}} placeholder="Repeat the PIN" className={`mt-2 ${settingsField} tracking-[.2em]`}/></label>
               </div>
               <p className={`mt-2 text-[11px] font-semibold ${pinError||(!pinMatches&&confirmPin.length>0)?'text-[#cf222e]':pinValid&&pinMatches?'text-[#1a7f37]':'text-[#57606a]'}`}>{pinMessage}</p>
               <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-[#eaeef2] pt-4">
-                <p className="max-w-xs text-[11px] leading-relaxed text-[#57606a]">Stored only as a digest. {hasPin===null?'PIN status could not be confirmed.':hasPin?'Saving a new PIN replaces the old one immediately.':'Without a PIN, manager voids are rejected.'}</p>
-                <button type="button" onClick={savePin} disabled={savingPin||!pinValid||!pinMatches} className="inline-flex items-center gap-2 rounded-md bg-[#1f883d] px-4 py-2.5 text-sm font-bold text-white transition hover:bg-[#1a7f37] disabled:cursor-not-allowed disabled:opacity-40">{savingPin?<Loader2 className="size-4 animate-spin"/>:<KeyRound className="size-4"/>}{savingPin?'Saving…':hasPin?'Replace PIN':'Set PIN'}</button>
+                <p className="max-w-xs text-[11px] leading-relaxed text-[#57606a]">Stored as a salted scrypt hash, never as plain digits. {hasPin===null?'PIN status could not be confirmed.':hasPin?'Admin accounts still bypass the PIN prompt.':'Without a PIN, manager voids are rejected.'}</p>
+                <div className="flex flex-wrap items-center justify-end gap-2">
+                  {hasPin&&(confirmRemovePin
+                    ? <><span className="text-[11px] font-bold text-[#cf222e]">Remove this PIN?</span><button type="button" onClick={removePin} disabled={removingPin||!currentPinReady} className="inline-flex items-center gap-2 rounded-md bg-[#cf222e] px-3 py-2.5 text-sm font-bold text-white transition hover:bg-[#a40e26] disabled:cursor-not-allowed disabled:opacity-40">{removingPin?<Loader2 className="size-4 animate-spin"/>:<Trash2 className="size-4"/>}{removingPin?'Removing…':'Confirm removal'}</button><button type="button" onClick={()=>setConfirmRemovePin(false)} disabled={removingPin} className="rounded-md border border-[#d0d7de] px-3 py-2.5 text-sm font-bold text-[#57606a] transition hover:bg-[#f6f8fa]">Keep it</button></>
+                    : <button type="button" onClick={()=>{setConfirmRemovePin(true); setPinError('')}} disabled={savingPin} className="rounded-md border border-[#ffcecb] px-3 py-2.5 text-sm font-bold text-[#cf222e] transition hover:bg-[#ffebe9] disabled:cursor-not-allowed disabled:opacity-40">Remove PIN</button>)}
+                  <button type="button" onClick={savePin} disabled={savingPin||removingPin||!pinValid||!pinMatches||!currentPinReady} className="inline-flex items-center gap-2 rounded-md bg-[#1f883d] px-4 py-2.5 text-sm font-bold text-white transition hover:bg-[#1a7f37] disabled:cursor-not-allowed disabled:opacity-40">{savingPin?<Loader2 className="size-4 animate-spin"/>:<KeyRound className="size-4"/>}{savingPin?'Saving…':hasPin?'Replace PIN':'Set PIN'}</button>
+                </div>
               </div>
             </SettingCard>
           </div>
@@ -582,9 +685,36 @@ function SettingsPage({toast,user,role,currency,businessName,onPreferencesSaved}
               </dl>
               {tradingDay?.openedAt&&<p className="mt-3 text-[11px] text-[#57606a]">Session opened {new Date(tradingDay.openedAt).toLocaleString([], {day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})}.</p>}
             </SettingCard>
-            <SettingCard icon={Database} title="Data export" sub="Download a CSV snapshot of this account's records.">
-              <p className="text-[11px] leading-relaxed text-[#57606a]">Products, sales, line items, tabs, stock movements, deliveries, counts, team, trading days, discounts, receipts, and the audit log — up to 10,000 rows per table.</p>
-              <button type="button" onClick={()=>window.location.assign('/api/export')} className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-md border border-[#d0d7de] bg-white px-4 py-3 text-sm font-bold text-[#1f2328] transition hover:bg-[#f6f8fa]"><Download className="size-4"/>Export all tables (CSV)</button>
+            <SettingCard icon={Database} title="Data export" sub="Download this account's records for a date range, as CSV or a ZIP of CSVs.">
+              <div>
+                <span className={settingsLabel}>Date range</span>
+                <div className="mt-2 grid grid-cols-2 gap-2">
+                  <label className="block min-w-0"><span className="text-[11px] text-[#57606a]">From</span><input type="date" value={exportFrom} max={exportTo||undefined} onChange={event=>{setExportFrom(event.target.value); setExportError('')}} className={`mt-1 min-w-0 ${settingsField}`}/></label>
+                  <label className="block min-w-0"><span className="text-[11px] text-[#57606a]">To</span><input type="date" value={exportTo} min={exportFrom||undefined} onChange={event=>{setExportTo(event.target.value); setExportError('')}} className={`mt-1 min-w-0 ${settingsField}`}/></label>
+                </div>
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  {([{label:'All time',days:null},{label:'Today',days:1},{label:'7 days',days:7},{label:'30 days',days:30}] as {label:string;days:number|null}[]).map(range=><button key={range.label} type="button" onClick={()=>applyExportRange(range.days)} className="rounded-full border border-[#d0d7de] bg-white px-2.5 py-1 text-[11px] font-semibold text-[#57606a] transition hover:bg-[#f6f8fa] hover:text-[#1f2328]">{range.label}</button>)}
+                </div>
+                <p className="mt-2 text-[11px] leading-relaxed text-[#57606a]">Blank dates include everything. Days follow the bar's clock ({timeZone}).</p>
+              </div>
+              <div className="mt-4 rounded-md border border-[#d0d7de]">
+                <button type="button" aria-expanded={showExportTables} onClick={()=>setShowExportTables(value=>!value)} className="flex w-full items-center justify-between gap-2 px-3 py-2.5 text-left text-xs font-bold text-[#1f2328] transition hover:bg-[#f6f8fa]">
+                  <span>{exportAll?`All ${EXPORT_TABLES.length} tables`:`${exportPicked.length} of ${EXPORT_TABLES.length} tables`}</span>
+                  <ChevronDown className={`size-4 text-[#57606a] transition ${showExportTables?'rotate-180':''}`}/>
+                </button>
+                {showExportTables&&<div className="border-t border-[#eaeef2] p-3">
+                  <div className="flex gap-2">
+                    <button type="button" onClick={()=>{setExportPicked(EXPORT_TABLES.map(table=>table.id)); setExportError('')}} className="rounded-md border border-[#d0d7de] px-2.5 py-1 text-[11px] font-semibold text-[#57606a] transition hover:bg-[#f6f8fa]">Select all</button>
+                    <button type="button" onClick={()=>{setExportPicked([]); setExportError('')}} className="rounded-md border border-[#d0d7de] px-2.5 py-1 text-[11px] font-semibold text-[#57606a] transition hover:bg-[#f6f8fa]">Clear</button>
+                  </div>
+                  <div className="mt-2 grid max-h-48 gap-0.5 overflow-auto sm:grid-cols-2">
+                    {EXPORT_TABLES.map(table=><label key={table.id} className="flex cursor-pointer items-center gap-2 rounded px-1.5 py-1 text-[11px] text-[#1f2328] hover:bg-[#f6f8fa]"><input type="checkbox" checked={exportPicked.includes(table.id)} onChange={()=>toggleExportTable(table.id)} className="size-3.5 accent-[#1f883d]"/><span className="truncate">{table.label}</span></label>)}
+                  </div>
+                </div>}
+              </div>
+              {(exportError||exportRangeInvalid)&&<p role="alert" className="mt-3 rounded-md border border-[#ffcecb] bg-[#ffebe9] px-3 py-2 text-[11px] font-semibold text-[#cf222e]">{exportError||'The start date must be on or before the end date.'}</p>}
+              <button type="button" onClick={runExport} disabled={!exportPicked.length||exportRangeInvalid} className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-md bg-[#1f883d] px-4 py-2.5 text-sm font-bold text-white transition hover:bg-[#1a7f37] disabled:cursor-not-allowed disabled:opacity-40"><Download className="size-4"/>{exportPicked.length===1?'Download CSV':'Download ZIP'}</button>
+              <p className="mt-3 text-[11px] leading-relaxed text-[#57606a]">One table downloads as CSV; several download as a ZIP with one CSV per table and a manifest. Up to 10,000 rows per table. Team PINs are never exported.</p>
             </SettingCard>
             <SettingCard icon={UserRound} title="Account" sub="The person signed in on this till.">
               <div className="flex items-center gap-3">
