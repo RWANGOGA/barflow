@@ -1,71 +1,82 @@
-import { createHash } from 'node:crypto'
-import { desc, eq } from 'drizzle-orm'
+import { and, asc, eq, gt, isNull } from 'drizzle-orm'
+import { alias } from 'drizzle-orm/pg-core'
 import { NextResponse } from 'next/server'
-import { authErrorResponse, requirePermission } from '@/lib/permissions'
-import { auditEvent } from '@/lib/audit'
+import { authErrorResponse, PERMISSION_LABELS, PERMISSION_ROLES, requirePermission, ROLE_DESCRIPTIONS, ROLE_RANK, type Permission, type Role } from '@/lib/permissions'
 import { db } from '@/lib/db'
-import { auditLogs, teamMembers } from '@/lib/db/schema'
+import { invitations, memberships, user as users, workspaces } from '@/lib/db/schema'
 
+const inviter = alias(users, 'inviter')
+
+/**
+ * Members are the people who can sign in to this workspace. The legacy roster table is
+ * deliberately not used here: a role that cannot authenticate is not access control.
+ */
 export async function GET() {
   try {
     const user = await requirePermission('team.manage')
-    const rows = await db
-      .select({
-        id: teamMembers.id,
-        name: teamMembers.name,
-        role: teamMembers.role,
-        createdAt: teamMembers.createdAt,
-      })
-      .from(teamMembers)
-      .where(eq(teamMembers.userId, user.id))
-      .orderBy(desc(teamMembers.createdAt))
+    const [workspace] = await db
+      .select({ id: workspaces.id, name: workspaces.name, ownerId: workspaces.ownerId })
+      .from(workspaces)
+      .where(eq(workspaces.id, user.workspaceId))
+      .limit(1)
 
-    return NextResponse.json(rows)
+    const memberRows = await db
+      .select({
+        id: memberships.id,
+        userId: memberships.userId,
+        name: users.name,
+        email: users.email,
+        role: memberships.role,
+        status: memberships.status,
+        createdAt: memberships.createdAt,
+      })
+      .from(memberships)
+      .innerJoin(users, eq(users.id, memberships.userId))
+      .where(eq(memberships.workspaceId, user.workspaceId))
+      .orderBy(asc(memberships.createdAt))
+
+    const pending = await db
+      .select({
+        id: invitations.id,
+        email: invitations.email,
+        role: invitations.role,
+        expiresAt: invitations.expiresAt,
+        createdAt: invitations.createdAt,
+        invitedBy: inviter.name,
+      })
+      .from(invitations)
+      .leftJoin(inviter, eq(inviter.id, invitations.invitedBy))
+      .where(and(
+        eq(invitations.workspaceId, user.workspaceId),
+        isNull(invitations.acceptedAt),
+        isNull(invitations.revokedAt),
+        gt(invitations.expiresAt, new Date()),
+      ))
+      .orderBy(asc(invitations.createdAt))
+
+    const matrix = (Object.keys(PERMISSION_ROLES) as Permission[]).map((permission) => ({
+      permission,
+      label: PERMISSION_LABELS[permission],
+      roles: PERMISSION_ROLES[permission],
+    }))
+
+    return NextResponse.json({
+      workspace,
+      me: { actorId: user.actorId, name: user.name, email: user.email, role: user.role },
+      members: memberRows.map((member) => ({
+        ...member,
+        isOwner: member.role === 'Owner',
+      })),
+      invitations: pending,
+      matrix,
+      roles: (Object.keys(ROLE_RANK) as Role[]).map((role) => ({
+        role,
+        rank: ROLE_RANK[role],
+        description: ROLE_DESCRIPTIONS[role],
+        grantable: role !== 'Owner',
+      })),
+    })
   } catch (error) {
     return authErrorResponse(error) ?? NextResponse.json({ error: 'Could not load team' }, { status: 500 })
-  }
-}
-
-export async function POST(request: Request) {
-  try {
-    const user = await requirePermission('team.manage')
-    const body = await request.json()
-    const name = typeof body.name === 'string' ? body.name.trim() : ''
-    const role = typeof body.role === 'string' ? body.role : 'Cashier'
-    const pin = typeof body.pin === 'string' ? body.pin : ''
-
-    if (!name || !['Cashier', 'Manager', 'Storekeeper'].includes(role) || !/^\d{4,8}$/.test(pin)) {
-      return NextResponse.json({ error: 'Invalid team member' }, { status: 400 })
-    }
-
-    const member = {
-      id: crypto.randomUUID(),
-      userId: user.id,
-      name,
-      role,
-      // Only the digest is stored; the personal PIN is never persisted in clear text.
-      pin: createHash('sha256').update(pin).digest('hex'),
-    }
-    const created = await db.transaction(async (tx) => {
-      const [row] = await tx
-        .insert(teamMembers)
-        .values(member)
-        .returning({ id: teamMembers.id, name: teamMembers.name, role: teamMembers.role })
-
-      // The PIN digest is deliberately absent from the audit row.
-      await tx.insert(auditLogs).values(auditEvent(user, {
-        action: 'team_add',
-        entityType: 'team_member',
-        entityId: row.id,
-        recordLabel: `${row.name} (${row.role})`,
-        metadata: { role: row.role },
-      }))
-
-      return row
-    })
-
-    return NextResponse.json(created, { status: 201 })
-  } catch (error) {
-    return authErrorResponse(error) ?? NextResponse.json({ error: 'Could not save team member' }, { status: 400 })
   }
 }

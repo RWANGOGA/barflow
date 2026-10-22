@@ -122,8 +122,9 @@ export async function GET(request: Request) {
         userRole: users.role,
       })
       .from(auditLogs)
-      // A left join keeps the event visible even if the account row is gone.
-      .leftJoin(users, eq(users.id, auditLogs.userId))
+      // A left join keeps the event visible even if the account row is gone. Older rows have
+      // no actor_id, so fall back to the tenant owner that was stored in user_id.
+      .leftJoin(users, sql`${users.id} = coalesce(${auditLogs.actorId}, ${auditLogs.userId})`)
       .where(where)
       .orderBy(desc(auditLogs.createdAt))
       .limit(limit)
@@ -161,7 +162,7 @@ export async function GET(request: Request) {
 
     const [events, [totals], actionFacets, entityFacets, [summary]] = await Promise.all([
       eventsQuery,
-      db.select({ total: sql<number>`count(*)::int` }).from(auditLogs).leftJoin(users, eq(users.id, auditLogs.userId)).where(where),
+      db.select({ total: sql<number>`count(*)::int` }).from(auditLogs).leftJoin(users, sql`${users.id} = coalesce(${auditLogs.actorId}, ${auditLogs.userId})`).where(where),
       db
         .select({ action: auditLogs.action, count: sql<number>`count(*)::int` })
         .from(auditLogs)
@@ -179,7 +180,7 @@ export async function GET(request: Request) {
           discounts: sql<number>`count(*) filter (where ${auditLogs.action} = 'discount')::int`,
           discountAmount: sql<number>`coalesce(sum(case when ${auditLogs.action} = 'discount' and ${auditLogs.metadata}->>'amount' ~ '^[0-9]+$' then (${auditLogs.metadata}->>'amount')::int else 0 end), 0)::int`,
           closes: sql<number>`count(*) filter (where ${auditLogs.action} = 'day_close')::int`,
-          adminActions: sql<number>`count(*) filter (where ${auditLogs.approval} = 'admin')::int`,
+          approvals: sql<number>`count(*) filter (where ${auditLogs.approval} not in ('recorded', 'Recorded'))::int`,
         })
         .from(auditLogs)
         .where(periodWhere),
@@ -199,7 +200,7 @@ export async function GET(request: Request) {
         actions: actionFacets.sort((a, b) => b.count - a.count),
         entityTypes: entityFacets.filter((facet) => facet.entityType).sort((a, b) => b.count - a.count),
       },
-      summary: summary ?? { total: 0, voids: 0, discounts: 0, discountAmount: 0, closes: 0, adminActions: 0 },
+      summary: summary ?? { total: 0, voids: 0, discounts: 0, discountAmount: 0, closes: 0, approvals: 0 },
     })
   } catch (error) {
     return (

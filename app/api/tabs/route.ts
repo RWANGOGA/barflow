@@ -1,6 +1,7 @@
 import { and, desc, eq, gte, sql } from 'drizzle-orm'
 import { NextResponse } from 'next/server'
-import { authErrorResponse, requirePermission, verifyUserPin } from '@/lib/permissions'
+import { authErrorResponse, requirePermission, type CurrentUser } from '@/lib/permissions'
+import { approvalErrorResponse, authorizeSensitiveAction } from '@/lib/approvals'
 import { auditEvent } from '@/lib/audit'
 import { databaseErrorResponse } from '@/lib/db-errors'
 import { DAY_LOCKED_ERROR, isDayLocked } from '@/lib/day'
@@ -43,18 +44,20 @@ export async function GET() {
   }
 }
 
-/** Void an open tab. Manager role is required and a PIN is verified unless the caller is an Admin. */
-async function voidTab(user: { id: string; role: string | null }, id: string, body: any) {
+/**
+ * Void an open tab. Any till operator can start it, but a manager must approve with their
+ * PIN (or an owner/admin can confirm their own) and the approver is recorded.
+ */
+async function voidTab(user: CurrentUser, id: string, body: any) {
   const reason = typeof body.reason === 'string' ? body.reason.trim() : ''
   if (reason.length < 3) return NextResponse.json({ error: 'Invalid void reason' }, { status: 400 })
-  if (user.role !== 'Admin' && !(await verifyUserPin(user.id, body.pin))) {
-    return NextResponse.json({ error: 'Manager PIN is invalid' }, { status: 403 })
-  }
+
+  const approval = await authorizeSensitiveAction(user, body.pin)
 
   const result = await db.transaction(async (tx) => {
     const [tab] = await tx
       .update(tabs)
-      .set({ status: 'voided', voidReason: reason, voidedBy: user.id, voidedAt: new Date() })
+      .set({ status: 'voided', voidReason: reason, voidedBy: user.actorId, voidedAt: new Date() })
       .where(and(eq(tabs.id, id), eq(tabs.userId, user.id), eq(tabs.status, 'open')))
       .returning()
     if (!tab) return null
@@ -82,7 +85,14 @@ async function voidTab(user: { id: string; role: string | null }, id: string, bo
       entityId: id,
       reason,
       recordLabel: tab.tableLabel,
-      metadata: { waiter: tab.ownerName },
+      approval: approval.method,
+      metadata: {
+        waiter: tab.ownerName,
+        total: tab.total,
+        approverId: approval.approverId,
+        approverName: approval.approverName,
+        approvalMethod: approval.method,
+      },
     }))
     return tab
   })
@@ -94,7 +104,7 @@ async function voidTab(user: { id: string; role: string | null }, id: string, bo
 class EmptyTabError extends Error {}
 
 /** Settle an open tab: record a real sale, payment and receipt so revenue reaches reports. */
-async function settleTab(user: { id: string; role: string | null }, id: string, body: any) {
+async function settleTab(user: CurrentUser, id: string, body: any) {
   const paymentMethod = normalisePayment(body.paymentMethod)
   if (!PAYMENT_METHODS.has(paymentMethod)) return NextResponse.json({ error: 'Invalid payment method' }, { status: 400 })
 
@@ -150,11 +160,11 @@ async function settleTab(user: { id: string; role: string | null }, id: string, 
         sql`INSERT INTO bar_receipt_counter (user_id, next_number) VALUES (${user.id}, 1) ON CONFLICT (user_id) DO UPDATE SET next_number = bar_receipt_counter.next_number + 1 RETURNING next_number`,
       )
       const receiptNumber = Number(counter.rows[0].next_number)
-      await tx.insert(receipts).values({ id: crypto.randomUUID(), userId: user.id, saleId, receiptNumber, isCopy: false, printedBy: user.id })
+      await tx.insert(receipts).values({ id: crypto.randomUUID(), userId: user.id, saleId, receiptNumber, isCopy: false, printedBy: user.actorId })
 
       const [settled] = await tx
         .update(tabs)
-        .set({ status: 'settled', paymentMethod, settledBy: user.id, settledAt: new Date(), saleId })
+        .set({ status: 'settled', paymentMethod, settledBy: user.actorId, settledAt: new Date(), saleId })
         .where(and(eq(tabs.id, id), eq(tabs.userId, user.id)))
         .returning()
 
@@ -184,11 +194,15 @@ export async function PATCH(request: Request) {
     const voidRequested = url.searchParams.get('void') === '1'
     if (!id) return NextResponse.json({ error: 'Missing tab id' }, { status: 400 })
 
-    const user = await requirePermission(voidRequested ? 'tabs.void' : 'tabs.manage')
+    // Voids are requested by any till operator; a manager PIN authorises it inside voidTab.
+    const user = await requirePermission('tabs.manage')
     const body = await request.json().catch(() => ({}))
     return voidRequested ? await voidTab(user, id, body) : await settleTab(user, id, body)
   } catch (error) {
-    return authErrorResponse(error) ?? databaseErrorResponse(error) ?? NextResponse.json({ error: 'Could not update tab' }, { status: 400 })
+    return approvalErrorResponse(error)
+      ?? authErrorResponse(error)
+      ?? databaseErrorResponse(error)
+      ?? NextResponse.json({ error: 'Could not update tab' }, { status: 400 })
   }
 }
 

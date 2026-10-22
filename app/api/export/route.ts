@@ -157,7 +157,8 @@ export async function GET(request: Request) {
 
     const manifest = [
       'Barflow data export',
-      `Account: ${user.id}`,
+      `Workspace: ${user.workspaceName} (${user.workspaceId})`,
+      `Exported by: ${user.name ?? user.email} (${user.role})`,
       `Generated: ${new Date().toISOString()}`,
       `Time zone: ${BAR_TIME_ZONE}`,
       `Range: ${from ? from.toISOString().slice(0, 10) : 'start'} to ${to ? to.toISOString().slice(0, 10) : 'today'}`,

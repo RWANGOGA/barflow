@@ -1,6 +1,7 @@
 import { and, eq, sql } from 'drizzle-orm'
 import { NextResponse } from 'next/server'
-import { authErrorResponse, requirePermission, verifyUserPin } from '@/lib/permissions'
+import { authErrorResponse, requirePermission } from '@/lib/permissions'
+import { approvalErrorResponse, authorizeSensitiveAction } from '@/lib/approvals'
 import { auditEvent } from '@/lib/audit'
 import { DAY_LOCKED_ERROR, isDayLocked } from '@/lib/day'
 import { db } from '@/lib/db'
@@ -11,7 +12,8 @@ export async function POST(
   { params }: { params: Promise<{ sale_id: string }> },
 ) {
   try {
-    const user = await requirePermission('sales.void')
+    // Any till operator may request a discount; a manager has to approve it below.
+    const user = await requirePermission('sales.create')
     const { sale_id } = await params
     const body = await request.json()
     const amount = Number(body.amount)
@@ -19,9 +21,6 @@ export async function POST(
 
     if (!Number.isInteger(amount) || amount <= 0 || reason.length < 3) {
       return NextResponse.json({ error: 'Invalid discount amount or reason' }, { status: 400 })
-    }
-    if (user.role !== 'Admin' && !(await verifyUserPin(user.id, body.pin))) {
-      return NextResponse.json({ error: 'Manager PIN is invalid' }, { status: 403 })
     }
     // A discount booked after the close would change a locked day's figures.
     if (await isDayLocked(user.id)) return NextResponse.json({ error: DAY_LOCKED_ERROR }, { status: 409 })
@@ -44,6 +43,9 @@ export async function POST(
     if (amount > remaining) {
       return NextResponse.json({ error: `Discount exceeds the remaining ${remaining} on this sale` }, { status: 400 })
     }
+
+    // Who actually approved it, and how. This is what the audit trail records.
+    const approval = await authorizeSensitiveAction(user, body.pin)
 
     const outcome = await db.transaction(async (tx) => {
       // Lock the sale so two approvals cannot both spend the same remaining balance.
@@ -70,7 +72,7 @@ export async function POST(
           saleId: sale_id,
           amount,
           reason,
-          approvedBy: user.id,
+          approvedBy: approval.approverId,
           approvedAt: new Date(),
         })
         .returning()
@@ -81,7 +83,15 @@ export async function POST(
         entityId: sale_id,
         recordLabel: `Sale ${sale_id.slice(0, 8)}`,
         reason,
-        metadata: { amount, saleTotal: locked.total, remainingAfter: left - amount },
+        approval: approval.method,
+        metadata: {
+          amount,
+          saleTotal: locked.total,
+          remainingAfter: left - amount,
+          approverId: approval.approverId,
+          approverName: approval.approverName,
+          approvalMethod: approval.method,
+        },
       }))
 
       return { kind: 'created' as const, discount: created }
@@ -93,6 +103,8 @@ export async function POST(
     }
     return NextResponse.json(outcome.discount, { status: 201 })
   } catch (error) {
-    return authErrorResponse(error) ?? NextResponse.json({ error: 'Could not apply discount' }, { status: 400 })
+    return approvalErrorResponse(error)
+      ?? authErrorResponse(error)
+      ?? NextResponse.json({ error: 'Could not apply discount' }, { status: 400 })
   }
 }

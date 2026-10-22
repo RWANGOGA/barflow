@@ -13,7 +13,7 @@ export async function GET() {
     const [row] = await db
       .select({ pinHash: userPins.pinHash })
       .from(userPins)
-      .where(eq(userPins.userId, user.id))
+      .where(eq(userPins.userId, user.actorId))
       .limit(1)
 
     return NextResponse.json({ hasPin: Boolean(row) })
@@ -35,7 +35,7 @@ export async function POST(request: Request) {
     const [existing] = await db
       .select({ pinHash: userPins.pinHash })
       .from(userPins)
-      .where(eq(userPins.userId, user.id))
+      .where(eq(userPins.userId, user.actorId))
       .limit(1)
 
     const currentPin = typeof body?.currentPin === 'string' ? body.currentPin.trim() : ''
@@ -51,11 +51,11 @@ export async function POST(request: Request) {
     if (remove) {
       if (!existing) return NextResponse.json({ hasPin: false })
       await db.transaction(async (tx) => {
-        await tx.delete(userPins).where(eq(userPins.userId, user.id))
+        await tx.delete(userPins).where(eq(userPins.userId, user.actorId))
         await tx.insert(auditLogs).values(auditEvent(user, {
           action: 'pin_change',
           entityType: 'approval_pin',
-          entityId: user.id,
+          entityId: user.actorId,
           recordLabel: 'Approval PIN removed',
           metadata: { removed: true },
         }))
@@ -75,13 +75,13 @@ export async function POST(request: Request) {
     await db.transaction(async (tx) => {
       await tx
         .insert(userPins)
-        .values({ userId: user.id, pinHash })
+        .values({ userId: user.actorId, pinHash })
         .onConflictDoUpdate({ target: userPins.userId, set: { pinHash } })
 
       await tx.insert(auditLogs).values(auditEvent(user, {
         action: 'pin_change',
         entityType: 'approval_pin',
-        entityId: user.id,
+        entityId: user.actorId,
         recordLabel: existing ? 'Approval PIN replaced' : 'Approval PIN created',
         metadata: { replaced: Boolean(existing) },
       }))

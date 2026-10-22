@@ -357,9 +357,75 @@ export const teamMembers = pgTable('bar_team_member', {
   check('bar_team_member_role_check', sql`${table.role} IN ('Admin', 'Manager', 'Cashier', 'Storekeeper')`),
 ])
 
+export const workspaces = pgTable('bar_workspace', {
+  id: text('id').primaryKey(),
+  name: text('name').notNull(),
+  ownerId: text('owner_id').notNull().references(() => user.id),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  // One workspace per owner keeps every existing `user_id` tenant key unambiguous.
+  uniqueIndex('bar_workspace_owner_idx').on(table.ownerId),
+])
+
+export const memberships = pgTable('bar_membership', {
+  id: text('id').primaryKey(),
+  workspaceId: text('workspace_id').notNull().references(() => workspaces.id, { onDelete: 'cascade' }),
+  userId: text('user_id').notNull().references(() => user.id, { onDelete: 'cascade' }),
+  role: text('role').notNull().default('Cashier'),
+  status: text('status').notNull().default('active'),
+  invitedBy: text('invited_by'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  uniqueIndex('bar_membership_workspace_user_idx').on(table.workspaceId, table.userId),
+  index('bar_membership_user_idx').on(table.userId),
+  check('bar_membership_role_check', sql`${table.role} IN ('Owner', 'Admin', 'Manager', 'Cashier', 'Storekeeper')`),
+  check('bar_membership_status_check', sql`${table.status} IN ('active', 'suspended')`),
+])
+
+export const invitations = pgTable('bar_invitation', {
+  id: text('id').primaryKey(),
+  workspaceId: text('workspace_id').notNull().references(() => workspaces.id, { onDelete: 'cascade' }),
+  email: text('email').notNull(),
+  role: text('role').notNull(),
+  /** Only the digest is stored; the shareable code is shown once when it is created. */
+  codeHash: text('code_hash').notNull(),
+  invitedBy: text('invited_by').notNull().references(() => user.id),
+  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+  acceptedAt: timestamp('accepted_at', { withTimezone: true }),
+  acceptedBy: text('accepted_by').references(() => user.id),
+  revokedAt: timestamp('revoked_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  uniqueIndex('bar_invitation_code_idx').on(table.codeHash),
+  index('bar_invitation_workspace_email_idx').on(table.workspaceId, table.email),
+  check('bar_invitation_role_check', sql`${table.role} IN ('Admin', 'Manager', 'Cashier', 'Storekeeper')`),
+])
+
+export const termsAcceptances = pgTable('bar_terms_acceptance', {
+  id: text('id').primaryKey(),
+  userId: text('user_id').notNull().references(() => user.id, { onDelete: 'cascade' }),
+  version: text('version').notNull(),
+  acceptedAt: timestamp('accepted_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  uniqueIndex('bar_terms_user_version_idx').on(table.userId, table.version),
+])
+
+export const pinAttempts = pgTable('bar_pin_attempt', {
+  id: text('id').primaryKey(),
+  workspaceId: text('workspace_id').notNull().references(() => workspaces.id, { onDelete: 'cascade' }),
+  userId: text('user_id').notNull().references(() => user.id),
+  success: boolean('success').notNull().default(false),
+  attemptedAt: timestamp('attempted_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index('bar_pin_attempt_user_time_idx').on(table.userId, table.attemptedAt),
+])
+
 export const auditLogs = pgTable('bar_audit_log', {
   id: text('id').primaryKey(),
   userId: text('user_id').notNull().references(() => user.id),
+  actorId: text('actor_id'),
   actorRole: text('actor_role'),
   action: text('action').notNull(),
   entityType: text('entity_type'),
@@ -453,6 +519,11 @@ export const schema = {
   varianceTolerances,
   varianceHistory,
   teamMembers,
+  workspaces,
+  memberships,
+  invitations,
+  termsAcceptances,
+  pinAttempts,
   auditLogs,
   idempotencyKeys,
   inventoryCounts,
