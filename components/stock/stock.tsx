@@ -8,13 +8,14 @@ import { ChevronDown, Truck } from 'lucide-react'
 export type Product = { id:string; name:string; category:string; price:number; stock:number; reorder:number; cost:number; unit:string; tone:string; note?:string }
 export type Role = 'Admin'|'Cashier'|'Manager'|'Storekeeper'
 
-export const money=(n:number)=>`UGX ${n.toLocaleString()}`
+const currencyCode=()=>{if(typeof window==='undefined')return 'UGX'; const stored=window.localStorage.getItem('barflow.currency')??''; return /^[A-Z]{2,5}$/.test(stored)?stored:'UGX'}
+export const money=(n:number)=>`${currencyCode()} ${n.toLocaleString()}`
 
 type StockView = 'stock' | 'counts' | 'movements' | 'wastage' | 'deliveries' | 'transfers'
 type StockFormKind = 'delivery' | 'wastage' | 'count' | 'transfer'
 
-function Shell({eyebrow,title,sub,children,action}:{eyebrow:string;title:string;sub:string;children:any;action?:React.ReactNode}){return <div className="mx-auto w-full max-w-[1180px]"><header className="mb-8 flex flex-col items-center gap-4 text-center"><div><p className="mb-2 text-xs font-bold uppercase tracking-[.16em] text-[#8a96a5]">{eyebrow}</p><h2 className="text-3xl font-bold tracking-tight md:text-4xl">{title}</h2><p className="mx-auto mt-2 max-w-2xl text-sm text-[#7c8796]">{sub}</p></div>{action}</header>{children}</div>}
-const Card=({children,className=''}:{children:any;className?:string})=><div className={`rounded-2xl border border-[#e0e6ee] bg-white p-5 shadow-[0_6px_18px_rgba(57,72,90,.04)] ${className}`}>{children}</div>
+function Shell({eyebrow,title,sub,children,action}:{eyebrow:string;title:string;sub:string;children:any;action?:React.ReactNode}){return <div className="mx-auto w-full max-w-[1200px]"><header className="mb-6 flex flex-col gap-3 border-b border-[#d8dee4] pb-4 sm:flex-row sm:items-end sm:justify-between"><div><p className="text-xs font-semibold text-[#57606a]">{eyebrow}</p><h2 className="mt-1 text-2xl font-semibold tracking-tight text-[#1f2328]">{title}</h2><p className="mt-1 max-w-2xl text-sm text-[#57606a]">{sub}</p></div>{action&&<div className="flex shrink-0 flex-wrap gap-2">{action}</div>}</header>{children}</div>}
+const Card=({children,className=''}:{children:any;className?:string})=><div className={`rounded-lg border border-[#d0d7de] bg-white p-5 shadow-[0_1px_0_rgba(27,31,36,.04)] ${className}`}>{children}</div>
 
 function TablePage({title,sub,children,action}:{title:string;sub:string;children:any;action?:React.ReactNode}){return <Shell eyebrow="Manager workspace" title={title} sub={sub} action={action}><Card className="overflow-hidden p-0">{children}</Card></Shell>}
 
@@ -90,10 +91,10 @@ export function Stock({ toast, role = 'Manager', products: stockItems = [], onSt
       sub="Track live stock, deliveries, wastage, and physical counts."
       action={canManage && (
         <>
-          <button onClick={() => openForm('delivery')} className="rounded-xl bg-[#292d34] px-4 py-3 text-sm font-bold text-white"><Truck className="mr-2 inline size-4" />Record delivery</button>
-          <button onClick={() => openForm('transfer')} className="rounded-xl border border-[#292d34] px-4 py-3 text-sm font-bold">Transfer stock</button>
-          <button onClick={() => openForm('wastage')} className="rounded-xl border border-[#a13e3e] px-4 py-3 text-sm font-bold text-red-600">Record wastage</button>
-          <button onClick={() => openForm('count')} className="rounded-xl border border-[#292d34] px-4 py-3 text-sm font-bold">Stock count</button>
+          <button onClick={() => openForm('delivery')} className="rounded-md bg-[#1f883d] px-4 py-3 text-sm font-bold text-white"><Truck className="mr-2 inline size-4" />Record delivery</button>
+          <button onClick={() => openForm('transfer')} className="rounded-md border border-[#d0d7de] px-4 py-3 text-sm font-bold">Transfer stock</button>
+          <button onClick={() => openForm('wastage')} className="rounded-md border border-[#cf222e] px-4 py-3 text-sm font-bold text-red-600">Record wastage</button>
+          <button onClick={() => openForm('count')} className="rounded-md border border-[#d0d7de] px-4 py-3 text-sm font-bold">Stock count</button>
         </>
       )}
     >
@@ -102,42 +103,42 @@ export function Stock({ toast, role = 'Manager', products: stockItems = [], onSt
       {form === 'wastage' && <WastageForm {...formProps} />}
       {form === 'count' && <CountSheet {...formProps} />}
 
-      <div className="flex flex-wrap gap-2 border-b border-[#edf0f4] p-5">
+      <div className="flex flex-wrap gap-2 border-b border-[#eaeef2] p-5">
         {tabs.filter((t) => !t.manageOnly || canManage).map((t) => (
-          <button key={t.key} onClick={() => loadView(t.key)} className={`rounded-xl border px-4 py-2 text-xs font-bold ${view === t.key ? 'bg-[#292d34] text-white' : ''}`}>{t.label}</button>
+          <button key={t.key} onClick={() => loadView(t.key)} className={`rounded-md border px-4 py-2 text-xs font-bold ${view === t.key ? 'bg-[#1f883d] text-white' : ''}`}>{t.label}</button>
         ))}
       </div>
 
       {view === 'stock' ? (
         <>
-          <div className="flex flex-wrap items-center gap-3 border-b border-[#edf0f4] p-4">
-            <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search items…" className="w-56 rounded-xl border border-[#dce3ec] px-3 py-2 text-sm" />
-            <button onClick={() => setLowOnly((v) => !v)} className={`rounded-xl border px-3 py-2 text-xs font-bold ${lowOnly ? 'bg-[#fff0e8] text-[#b87555]' : ''}`}>Low stock ({lowCount})</button>
-            <span className="ml-auto text-xs font-bold text-[#687587]">Stock value at cost: UGX {stockValue.toLocaleString()}</span>
+          <div className="flex flex-wrap items-center gap-3 border-b border-[#eaeef2] p-4">
+            <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search items…" className="w-56 rounded-md border border-[#d0d7de] px-3 py-2 text-sm" />
+            <button onClick={() => setLowOnly((v) => !v)} className={`rounded-md border px-3 py-2 text-xs font-bold ${lowOnly ? 'bg-[#fff8c5] text-[#9a6700]' : ''}`}>Low stock ({lowCount})</button>
+            <span className="ml-auto text-xs font-bold text-[#57606a]">Stock value at cost: UGX {stockValue.toLocaleString()}</span>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full min-w-[680px] text-left text-sm">
-              <thead className="bg-[#f7f9fc] text-xs uppercase tracking-wider text-[#8a96a5]">
+              <thead className="bg-[#f6f8fa] text-xs uppercase tracking-wider text-[#57606a]">
                 <tr><th className="p-4">Item</th><th>Unit</th><th>On hand</th><th>Reorder at</th><th>Status</th><th></th></tr>
               </thead>
               <tbody>
                 {visible.map((p: Product) => (
-                  <tr key={p.id} className="border-t border-[#edf0f4]">
-                    <td className="p-4 font-bold">{p.name}<span className="ml-2 text-xs font-normal text-[#8a96a5]">{p.category}</span></td>
+                  <tr key={p.id} className="border-t border-[#eaeef2]">
+                    <td className="p-4 font-bold">{p.name}<span className="ml-2 text-xs font-normal text-[#57606a]">{p.category}</span></td>
                     <td>{p.unit}</td>
                     <td className="font-bold">{p.stock}</td>
                     <td>{p.reorder}</td>
-                    <td><span className={`rounded-full px-2 py-1 text-[10px] font-bold ${p.stock <= p.reorder ? 'bg-[#fff0e8] text-[#b87555]' : 'bg-[#e5f4e9] text-[#47815a]'}`}>{p.stock <= p.reorder ? 'LOW STOCK' : 'IN STOCK'}</span></td>
+                    <td><span className={`rounded-full px-2 py-1 text-[10px] font-bold ${p.stock <= p.reorder ? 'bg-[#fff8c5] text-[#9a6700]' : 'bg-[#dafbe1] text-[#1a7f37]'}`}>{p.stock <= p.reorder ? 'LOW STOCK' : 'IN STOCK'}</span></td>
                     <td>
                       <div className="flex items-center gap-2">
-                        {canManage && <button onClick={() => openForm('delivery', p.id)} className="rounded-lg bg-[#e5f4e9] px-3 py-2 text-[10px] font-bold text-[#47815a]">Receive</button>}
+                        {canManage && <button onClick={() => openForm('delivery', p.id)} className="rounded-lg bg-[#dafbe1] px-3 py-2 text-[10px] font-bold text-[#1a7f37]">Receive</button>}
                         {canManage && <button onClick={() => openForm('transfer', p.id)} className="rounded-lg border px-3 py-2 text-[10px] font-bold">Transfer</button>}
                         <button onClick={() => loadView('movements', p.id)} aria-label={`Open ${p.name} movement history`}><ChevronDown className="size-4" /></button>
                       </div>
                     </td>
                   </tr>
                 ))}
-                {visible.length === 0 && <tr><td colSpan={6} className="p-6 text-center text-sm text-[#8a96a5]">No items match.</td></tr>}
+                {visible.length === 0 && <tr><td colSpan={6} className="p-6 text-center text-sm text-[#57606a]">No items match.</td></tr>}
               </tbody>
             </table>
           </div>
@@ -148,19 +149,19 @@ export function Stock({ toast, role = 'Manager', products: stockItems = [], onSt
             <h3 className="font-bold">
               {view === 'counts' ? 'Physical counts' : view === 'movements' ? (filterId ? `Movements: ${nameOf(filterId)}` : 'Movement history') : view === 'wastage' ? 'Wastage and adjustments' : view === 'deliveries' ? 'Deliveries' : 'Stock transfers'}
             </h3>
-            {view === 'counts' && <span className="text-xs font-bold text-[#47815a]">Net variance: {signed(variance)}</span>}
-            {filterId && <button onClick={() => loadView('movements')} className="text-xs font-bold text-[#687587]">Show all</button>}
+            {view === 'counts' && <span className="text-xs font-bold text-[#1a7f37]">Net variance: {signed(variance)}</span>}
+            {filterId && <button onClick={() => loadView('movements')} className="text-xs font-bold text-[#57606a]">Show all</button>}
           </div>
-          {loading ? <p className="text-sm text-[#8a96a5]">Loading…</p> : report.length === 0 ? <p className="text-sm text-[#8a96a5]">No records found.</p> : (
-            <ul className="divide-y divide-[#edf0f4] rounded-xl border border-[#e0e6ee] bg-white">
+          {loading ? <p className="text-sm text-[#57606a]">Loading…</p> : report.length === 0 ? <p className="text-sm text-[#57606a]">No records found.</p> : (
+            <ul className="divide-y divide-[#eaeef2] rounded-md border border-[#d0d7de] bg-white">
               {report.slice(0, 50).map((item: any, index: number) => {
                 const r = describeRecord(view, item, nameOf)
                 return (
                   <li key={item.id ?? index} className="flex flex-wrap items-center gap-x-4 gap-y-1 p-3 text-sm">
                     <b className="min-w-32">{r.name}</b>
                     <span>{r.headline}</span>
-                    <span className="text-xs text-[#687587]">{r.detail}</span>
-                    <span className="ml-auto text-xs text-[#8a96a5]">{formatWhen(r.when)}</span>
+                    <span className="text-xs text-[#57606a]">{r.detail}</span>
+                    <span className="ml-auto text-xs text-[#57606a]">{formatWhen(r.when)}</span>
                   </li>
                 )
               })}
