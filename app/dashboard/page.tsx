@@ -3,7 +3,7 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import { signOut, useSession } from '@/lib/auth-client'
 import { Stock } from '@/components/stock/stock'
-import { TriangleAlert as AlertTriangle, ArrowDownToLine, ChartBar as BarChart3, Check, ChevronDown, ClipboardCheck, ClipboardList, CreditCard, Download, FileText, LayoutDashboard, Menu, Package, Plus, Printer, ReceiptText, RefreshCw, Search, Settings, ShieldCheck, ShoppingBag, SlidersHorizontal, Tags, TrendingDown, TrendingUp, UsersRound, Wine, X } from 'lucide-react'
+import { TriangleAlert as AlertTriangle, ArrowDownToLine, ChartBar as BarChart3, Check, ChevronDown, ClipboardCheck, ClipboardList, Clock, CreditCard, Database, Download, Eye, EyeOff, FileText, KeyRound, LayoutDashboard, Loader2, Lock, LogOut, Menu, Package, Plus, Printer, ReceiptText, RefreshCw, Save, Search, Settings, ShieldCheck, ShoppingBag, SlidersHorizontal, Tags, TrendingDown, TrendingUp, UserRound, UsersRound, Wallet, Wine, X } from 'lucide-react'
 
 type Product = { id:string; name:string; category:string; price:number; stock:number; reorder:number; cost:number; unit:string; tone:string; note?:string }
 type Role = 'Admin'|'Cashier'|'Manager'|'Storekeeper'
@@ -17,17 +17,30 @@ type OverviewData = { ready?:boolean; generatedAt?:string; range?:RangeType; ran
 
 
 const EMPTY_OVERVIEW:OverviewData={ready:false,rangeLabel:'This week',today:{revenue:0,orders:0,averageOrder:0},session:null,totals:{revenue:0,orders:0,averageOrder:0,itemsSold:0,discounts:0,discountsValue:0,voidedOrders:0,voidedValue:0},previous:null,delta:{revenue:null,orders:null,todayRevenue:null},openTabs:0,openTabsValue:0,openTabsStatus:'All settled',byPayment:[],series:[],topProducts:[],lowStock:{count:0,items:[]},recent:[],checklist:{completed:0,total:0,items:[]},cashDrawer:{openingFloat:0,expectedCash:0,countedCash:null,cashVariance:null,dayStatus:'no_day',dayLocked:false}}
-const money=(n:number)=>`UGX ${n.toLocaleString()}`
+// Cached locally so a reloaded till prints with the right currency before any request resolves.
+const CURRENCY_STORAGE_KEY='barflow.currency'
+const BAR_NAME_STORAGE_KEY='barflow.barName'
+const CURRENCY_PATTERN=/^[A-Z]{2,5}$/
+const BAR_NAME_FALLBACK='THE SIPPER'
+const CURRENCY_OPTIONS=['UGX','KES','TZS','RWF','USD','EUR','GBP','ZAR','NGN']
+let CURRENCY='UGX'
+let BAR_NAME=BAR_NAME_FALLBACK
+const normalizeCurrency=(value:unknown)=>{const code=String(value??'').trim().toUpperCase(); return CURRENCY_PATTERN.test(code)?code:''}
+const applyCurrency=(value:unknown)=>{const code=normalizeCurrency(value); if(code)CURRENCY=code; return CURRENCY}
+const applyBarName=(value:unknown)=>{const name=String(value??'').replace(/\s+/g,' ').trim().slice(0,60); BAR_NAME=name||BAR_NAME_FALLBACK; return BAR_NAME}
+const cachedSetting=(key:string)=>typeof window==='undefined'?'':window.localStorage.getItem(key)??''
+const money=(n:number)=>`${CURRENCY} ${n.toLocaleString()}`
 const initials=(name?:string|null)=>(name??'').trim().split(/\s+/).filter(Boolean).slice(0,2).map(part=>part[0]?.toUpperCase()??'').join('')||'??'
-function printReceipt(receipt:{saleId?:string;receiptNumber?:number|string;cashier:string;payment:string;changeDue?:number;items:{name:string;quantity:number;price:number;total:number;note?:string}[];total:number}){const receiptWindow=window.open('', '_blank', 'width=420,height=700'); if(!receiptWindow)return false; const rows=receipt.items.map(item=>`<tr><td>${item.name}${item.note?' <span style="font-size:10px;color:#687587">('+item.note+')</span>':''}<br><small>${item.quantity} × ${money(item.price)}</small></td><td>${money(item.total)}</td></tr>`).join(''); receiptWindow.document.write(`<!doctype html><html><head><title>Receipt ${receipt.saleId??''}</title><style>body{font-family:Arial,sans-serif;color:#292d34;width:320px;margin:24px auto}h1{text-align:center;font-size:20px;margin:0 0 4px}p{color:#687587;font-size:12px;text-align:center;margin:4px 0 18px}table{width:100%;border-collapse:collapse;font-size:13px}td{padding:9px 0;border-bottom:1px solid #e5e7eb}td:last-child{text-align:right;white-space:nowrap}.total{display:flex;justify-content:space-between;font-weight:700;font-size:18px;margin-top:18px}.meta{display:flex;justify-content:space-between;font-size:12px;margin:4px 0}@media print{body{margin:0 auto}}</style></head><body><h1>THE SIPPER</h1><p>Bar management receipt</p><div class="meta"><span>Receipt</span><span>#${receipt.receiptNumber??'--'}</span></div><div class="meta"><span>Sale</span><span>${receipt.saleId??'Sale'}</span></div><div class="meta"><span>Cashier</span><span>${receipt.cashier}</span></div><div class="meta"><span>Payment</span><span>${receipt.payment}</span></div>${receipt.changeDue!=null&&receipt.changeDue>0?`<div class="meta"><span>Change due</span><span>${money(receipt.changeDue??0)}</span></div>`:''}<table>${rows}</table><div class="total"><span>Total</span><span>${money(receipt.total)}</span></div><p>Thank you for your visit.</p><script>window.onload=()=>window.print()</script></body></html>`); receiptWindow.document.close(); return true}
+function printReceipt(receipt:{saleId?:string;receiptNumber?:number|string;cashier:string;payment:string;changeDue?:number;items:{name:string;quantity:number;price:number;total:number;note?:string}[];total:number}){const receiptWindow=window.open('', '_blank', 'width=420,height=700'); if(!receiptWindow)return false; const rows=receipt.items.map(item=>`<tr><td>${item.name}${item.note?' <span style="font-size:10px;color:#687587">('+item.note+')</span>':''}<br><small>${item.quantity} × ${money(item.price)}</small></td><td>${money(item.total)}</td></tr>`).join(''); receiptWindow.document.write(`<!doctype html><html><head><title>Receipt ${receipt.saleId??''}</title><style>body{font-family:Arial,sans-serif;color:#292d34;width:320px;margin:24px auto}h1{text-align:center;font-size:20px;margin:0 0 4px}p{color:#687587;font-size:12px;text-align:center;margin:4px 0 18px}table{width:100%;border-collapse:collapse;font-size:13px}td{padding:9px 0;border-bottom:1px solid #e5e7eb}td:last-child{text-align:right;white-space:nowrap}.total{display:flex;justify-content:space-between;font-weight:700;font-size:18px;margin-top:18px}.meta{display:flex;justify-content:space-between;font-size:12px;margin:4px 0}@media print{body{margin:0 auto}}</style></head><body><h1>${BAR_NAME}</h1><p>Bar management receipt</p><div class="meta"><span>Receipt</span><span>#${receipt.receiptNumber??'--'}</span></div><div class="meta"><span>Sale</span><span>${receipt.saleId??'Sale'}</span></div><div class="meta"><span>Cashier</span><span>${receipt.cashier}</span></div><div class="meta"><span>Payment</span><span>${receipt.payment}</span></div>${receipt.changeDue!=null&&receipt.changeDue>0?`<div class="meta"><span>Change due</span><span>${money(receipt.changeDue??0)}</span></div>`:''}<table>${rows}</table><div class="total"><span>Total</span><span>${money(receipt.total)}</span></div><p>Thank you for your visit.</p><script>window.onload=()=>window.print()</script></body></html>`); receiptWindow.document.close(); return true}
 function printTicket(receipt:{saleId?:string;receiptNumber?:number|string;cashier:string;items:{name:string;quantity:number;price:number;total:number}[];total:number}){const receiptWindow=window.open('', '_blank', 'width=280,height=500'); if(!receiptWindow)return false; const rows=receipt.items.map(item=>`<tr><td>${item.name}</td><td style="text-align:right">${item.quantity}</td><td style="text-align:right">${money(item.total)}</td></tr>`).join(''); receiptWindow.document.write(`<!doctype html><html><head><title>Bar ticket ${receipt.saleId??''}</title><style>body{font-family:Arial,sans-serif;color:#292d34;width:280px;margin:16px auto}h1{text-align:center;font-size:16px;margin:0 0 4px}p{color:#687587;font-size:11px;text-align:center;margin:4px 0 12px}table{width:100%;border-collapse:collapse;font-size:12px}td{padding:6px 0;border-bottom:1px solid #e5e7eb}td:last-child{text-align:right}.total{display:flex;justify-content:space-between;font-weight:700;margin-top:12px}@media print{body{margin:0 auto}}</style></head><body><h1>BAR TICKET</h1><p>Order #${receipt.receiptNumber??'--'} · ${receipt.cashier}</p><table>${rows}</table><div class="total"><span>Total</span><span>${money(receipt.total)}</span></div><p style="margin-top:16px;font-size:10px;color:#687587">Prepare drinks in order listed.</p><script>window.onload=()=>window.print()</script></body></html>`); receiptWindow.document.close(); return true}
 const nav:{label:Page; icon:any; roles:Role[]}[]=[{label:'Overview',icon:LayoutDashboard,roles:['Admin','Cashier','Manager','Storekeeper']},{label:'New sale',icon:CreditCard,roles:['Admin','Cashier','Manager']},{label:'Open tabs',icon:ClipboardList,roles:['Admin','Cashier','Manager']},{label:'Stock & deliveries',icon:Package,roles:['Admin','Manager','Storekeeper']},{label:'Daily close',icon:ClipboardCheck,roles:['Admin','Manager']},{label:'Reports',icon:BarChart3,roles:['Admin','Manager']},{label:'Menu & prices',icon:Tags,roles:['Admin','Manager']},{label:'Team & permissions',icon:UsersRound,roles:['Admin','Manager']},{label:'Audit log',icon:FileText,roles:['Admin','Manager']},{label:'Settings',icon:Settings,roles:['Admin','Manager']}]
 function PageSidebar({page,go}:{page:Page;go:(page:Page)=>void}){return <nav aria-label="Workspace navigation" className="fixed inset-x-0 bottom-0 z-40 flex h-16 items-center gap-1 overflow-x-auto bg-[#282d35] px-3 text-white shadow-2xl lg:inset-y-0 lg:bottom-auto lg:left-0 lg:h-auto lg:w-[250px] lg:flex-col lg:items-stretch lg:gap-1 lg:overflow-y-auto lg:overflow-x-hidden lg:p-5"> <div className="mb-0 hidden items-center gap-3 px-2 lg:mb-6 lg:flex"><div className="flex size-10 items-center justify-center rounded-xl bg-[#d8e7ff] text-[#282d35]"><Wine className="size-5"/></div><div><b className="text-sm">THE SIPPER</b><p className="text-[9px] uppercase tracking-[.16em] text-[#aeb9c8]">bar management</p></div></div>{nav.map(({label,icon:Icon})=><button key={label} onClick={()=>go(label)} className={`flex items-center gap-3 rounded-xl px-3 py-3 text-left text-sm font-semibold ${page===label?'bg-[#f8fafc] text-[#292d34]':'text-[#d0d7e2] hover:bg-[#39414d]'}`}><Icon className="size-[18px]"/>{label}</button>)}</nav>}
 
-export default function Page(){const {data:session}=useSession(); const [page,setPage]=useState<Page>('Overview'); const [role,setRole]=useState<Role>('Cashier'); const [timeGreeting,setTimeGreeting]=useState('Welcome back'); const [todayLabel,setTodayLabel]=useState(''); const [mobile,setMobile]=useState(false); const [notice,setNotice]=useState(''); const [query,setQuery]=useState(''); const [category,setCategory]=useState('All'); const [cart,setCart]=useState<{p:Product;q:number;note?:string}[]>([]); const [payment,setPayment]=useState('Cash'); const [closed,setClosed]=useState(false); const [day,setDay]=useState<any>(null); const [inventory,setInventory]=useState<Product[]>([]); const [receiptNumber,setReceiptNumber]=useState<string|null>(null); const [tableLabel,setTableLabel]=useState<string|null>(null); const [waiter,setWaiter]=useState<string|null>(null); const [tenderedAmount,setTenderedAmount]=useState<number|null>(null); const [waiters,setWaiters]=useState<string[]>([]); const [nextReceipt,setNextReceipt]=useState<number|null>(null); const [paying,setPaying]=useState(false); const saleKey=useRef<string|null>(null); useEffect(()=>{setRole(normalizeRole((session?.user as {role?:string}|undefined)?.role))},[session]); useEffect(()=>{setTimeGreeting(getGreeting()); setTodayLabel(new Date().toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long',year:'numeric'}))},[]); const [overview,setOverview]=useState<OverviewData>(EMPTY_OVERVIEW); const [overviewLoading,setOverviewLoading]=useState(true); const [overviewError,setOverviewError]=useState(''); const overviewTicket=useRef(0);
+export default function Page(){const {data:session}=useSession(); const [page,setPage]=useState<Page>('Overview'); const [currency,setCurrency]=useState(CURRENCY); const [businessName,setBusinessName]=useState(BAR_NAME); const [role,setRole]=useState<Role>('Cashier'); const [timeGreeting,setTimeGreeting]=useState('Welcome back'); const [todayLabel,setTodayLabel]=useState(''); const [mobile,setMobile]=useState(false); const [notice,setNotice]=useState(''); const [query,setQuery]=useState(''); const [category,setCategory]=useState('All'); const [cart,setCart]=useState<{p:Product;q:number;note?:string}[]>([]); const [payment,setPayment]=useState('Cash'); const [closed,setClosed]=useState(false); const [day,setDay]=useState<any>(null); const [inventory,setInventory]=useState<Product[]>([]); const [receiptNumber,setReceiptNumber]=useState<string|null>(null); const [tableLabel,setTableLabel]=useState<string|null>(null); const [waiter,setWaiter]=useState<string|null>(null); const [tenderedAmount,setTenderedAmount]=useState<number|null>(null); const [waiters,setWaiters]=useState<string[]>([]); const [nextReceipt,setNextReceipt]=useState<number|null>(null); const [paying,setPaying]=useState(false); const saleKey=useRef<string|null>(null); useEffect(()=>{setRole(normalizeRole((session?.user as {role?:string}|undefined)?.role))},[session]); useEffect(()=>{setTimeGreeting(getGreeting()); setTodayLabel(new Date().toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long',year:'numeric'}))},[]); const [overview,setOverview]=useState<OverviewData>(EMPTY_OVERVIEW); const [overviewLoading,setOverviewLoading]=useState(true); const [overviewError,setOverviewError]=useState(''); const overviewTicket=useRef(0);
  const [range,setRange]=useState<RangeType>('week'); const [rangeOpen,setRangeOpen]=useState(false); const rangeOptions:RangeOption[]=[{value:'today',label:'This day'},{value:'week',label:'This week'},{value:'month',label:'Month'},{value:'two_months',label:'Two months'},{value:'mid_year',label:'Mid year'},{value:'all',label:'All'}];
  const refreshLiveData=async()=>{if(!session?.user){setOverviewLoading(false);return} const ticket=++overviewTicket.current; setOverviewLoading(true); try{const [overviewRes,productsRes,dayRes]=await Promise.all([fetch('/api/overview?range='+range,{cache:'no-store'}),fetch('/api/products',{cache:'no-store'}),fetch('/api/day',{cache:'no-store'})]); if(ticket!==overviewTicket.current)return; if(overviewRes.ok){const data=await overviewRes.json(); setOverview({...data,ready:true}); setOverviewError('')} else {const body=await overviewRes.json().catch(()=>({})); setOverviewError(body?.error??'Could not load live overview data.'); setOverview(current=>current.ready?current:{...EMPTY_OVERVIEW,rangeLabel:rangeOptions.find(option=>option.value===range)?.label??'This week'})} if(productsRes.ok){const rows=await productsRes.json(); setInventory(Array.isArray(rows)?rows:[])} if(dayRes.ok){const record=await dayRes.json(); setDay(record); setClosed(record?.status==='closed')}}catch{if(ticket===overviewTicket.current)setOverviewError('Could not reach the server. Check your connection and retry.')}finally{if(ticket===overviewTicket.current)setOverviewLoading(false)}};
  useEffect(()=>{void refreshLiveData()},[range,session?.user?.id,page]);
+ useEffect(()=>{if(!session?.user)return; let active=true; const useCached=()=>{if(!active)return; const savedCurrency=applyCurrency(cachedSetting(CURRENCY_STORAGE_KEY)); const savedName=applyBarName(cachedSetting(BAR_NAME_STORAGE_KEY)); setCurrency(savedCurrency); setBusinessName(savedName)}; fetch('/api/settings',{cache:'no-store'}).then(r=>r.ok?r.json():null).then(data=>{if(!active)return; if(!data?.items){useCached(); return} const map=new Map<string,string>((data.items??[]).map((row:any)=>[String(row.key),String(row.value)])); const savedCurrency=applyCurrency(map.get('currency')??cachedSetting(CURRENCY_STORAGE_KEY)); const savedName=applyBarName(map.get('bar_name')??cachedSetting(BAR_NAME_STORAGE_KEY)); window.localStorage.setItem(CURRENCY_STORAGE_KEY,savedCurrency); window.localStorage.setItem(BAR_NAME_STORAGE_KEY,savedName); setCurrency(savedCurrency); setBusinessName(savedName)}).catch(useCached); return()=>{active=false}},[session?.user?.id]);
  useEffect(()=>{if(page!=='Overview'||!session?.user)return; const timer=setInterval(()=>{void refreshLiveData()},30000); return()=>clearInterval(timer)},[page,session?.user?.id,range]); useEffect(()=>{if(!session?.user)return; fetch('/api/team/waiters',{cache:'no-store'}).then(r=>r.ok?r.json():[]).then(rows=>{const w=Array.isArray(rows)?rows.map((m:any)=>m.name):[]; setWaiters(w); setWaiter(current=>current&&(w.includes(current)||!w.length)?current:(w.length?w[0]:(session?.user?.name??null)))}).catch(()=>undefined); fetch('/api/receipts/next',{cache:'no-store'}).then(r=>r.ok?r.json():null).then(data=>{if(data?.nextNumber)setNextReceipt(Number(data.nextNumber))}).catch(()=>undefined)},[session?.user?.id]);
 			const allowed=nav.filter(n=>n.roles.includes(role)); useEffect(()=>{if(!allowed.some(item=>item.label===page))setPage('Overview')},[allowed,page]);
 		const filtered=useMemo(()=>inventory.filter(p=>(category==='All'||p.category===category)&&p.name.toLowerCase().includes(query.toLowerCase())),[inventory,category,query]); const low=inventory.filter(p=>p.stock<=p.reorder).length; const total=cart.reduce((s,x)=>s+x.p.price*x.q,0)
@@ -42,7 +55,7 @@ export default function Page(){const {data:session}=useSession(); const [page,se
  if(page==='Menu & prices') return <><PageSidebar page={page} go={go}/><main className="min-h-screen pl-0 lg:pl-[250px] bg-[#dce9fb] p-4 text-[#292d34] md:p-8 mx-auto max-w-[1680px] [&>section]:mx-auto [&>section]:w-full [&>section]:max-w-[1240px]"><MenuPage inventory={inventory} onSave={saveProduct}/>{routedNotice}</main></>;
  if(page==='Team & permissions') return <><PageSidebar page={page} go={go}/><main className="min-h-screen pl-0 lg:pl-[250px] bg-[#dce9fb] p-4 text-[#292d34] md:p-8 mx-auto max-w-[1680px] [&>section]:mx-auto [&>section]:w-full [&>section]:max-w-[1240px]"><Team toast={toast}/>{routedNotice}</main></>;
  if(page==='Audit log') return <><PageSidebar page={page} go={go}/><main className="min-h-screen pl-0 lg:pl-[250px] bg-[#dce9fb] p-4 text-[#292d34] md:p-8 mx-auto max-w-[1680px] [&>section]:mx-auto [&>section]:w-full [&>section]:max-w-[1240px]"><Audit/>{routedNotice}</main></>;
- if(page==='Settings') return <><PageSidebar page={page} go={go}/><main className="min-h-screen pl-0 lg:pl-[250px] bg-[#dce9fb] p-4 text-[#292d34] md:p-8 mx-auto max-w-[1680px] [&>section]:mx-auto [&>section]:w-full [&>section]:max-w-[1240px]"><SettingsPage toast={toast}/>{routedNotice}</main></>;
+ if(page==='Settings') return <><PageSidebar page={page} go={go}/><main className="min-h-screen pl-0 lg:pl-[250px] bg-[#dce9fb] p-4 text-[#292d34] md:p-8 mx-auto max-w-[1680px] [&>section]:mx-auto [&>section]:w-full [&>section]:max-w-[1240px]"><SettingsPage toast={toast} user={session?.user} role={role} currency={currency} businessName={businessName} onPreferencesSaved={(next:{currency:string;barName:string})=>{const savedCurrency=applyCurrency(next.currency); const savedName=applyBarName(next.barName); window.localStorage.setItem(CURRENCY_STORAGE_KEY,savedCurrency); window.localStorage.setItem(BAR_NAME_STORAGE_KEY,savedName); setCurrency(savedCurrency); setBusinessName(savedName)}}/>{routedNotice}</main></>;
  return <><main className="min-h-screen bg-[#dce9fb] text-[#292d34]"><div className="mx-auto flex min-h-screen max-w-[1600px] bg-[#f7f9fc]"><aside className={`fixed inset-y-0 left-0 z-40 flex w-[270px] flex-col bg-[#282d35] p-5 text-white transition-transform [&>div:last-child]:hidden lg:static lg:translate-x-0 ${mobile?'translate-x-0':'-translate-x-full'}`}><div className="flex items-center gap-3 px-2"><div className="flex size-11 items-center justify-center rounded-2xl bg-[#d8e7ff] text-[#282d35]"><Wine/></div><div><b className="text-[17px]">THE SIPPER</b><p className="text-[10px] font-semibold uppercase tracking-[.2em] text-[#aeb9c8]">{role} · {session?.user?.name ?? 'bar management'}</p></div></div><p className="mb-2 mt-10 px-3 text-[10px] font-bold uppercase tracking-[.16em] text-[#8d98a8]">Workspace</p><div className="flex flex-col gap-1">{allowed.slice(0,5).map(({label,icon:Icon})=><button key={label} onClick={()=>go(label)} className={`flex items-center gap-3 rounded-xl px-3 py-3 text-left text-sm font-semibold ${page===label?'bg-[#f8fafc] text-[#292d34]':'text-[#d0d7e2] hover:bg-[#39414d]'}`}><Icon className="size-[18px]"/>{label}{label==='Open tabs'&&overview.openTabs>0&&<span className="ml-auto rounded-full bg-[#c9e6d1] px-2 py-0.5 text-[10px] text-[#39734c]">{overview.openTabs}</span>}</button>)}</div>{allowed.length>5&&<><p className="mb-2 mt-8 px-3 text-[10px] font-bold uppercase tracking-[.16em] text-[#8d98a8]">Management</p><div className="flex flex-col gap-1">{allowed.slice(5).map(({label,icon:Icon})=><button key={label} onClick={()=>go(label)} className={`flex items-center gap-3 rounded-xl px-3 py-3 text-left text-sm font-semibold ${page===label?'bg-[#f8fafc] text-[#292d34]':'text-[#d0d7e2] hover:bg-[#39414d]'}`}><Icon className="size-[18px]"/>{label}</button>)}</div></>}<div className="mt-auto rounded-2xl border border-[#46505e] bg-[#333a45] p-4"><div className="flex items-center gap-2 text-[#c9e6d1]"><ShieldCheck className="size-4"/><b className="text-xs">{overview.cashDrawer.dayLocked?'Trading day closed':overview.cashDrawer.dayStatus==='open'?'Trading day open':'Trading day not started'}</b></div><p className="mt-2 text-[11px] leading-relaxed text-[#aeb9c8]">Expected cash {money(overview.cashDrawer.expectedCash)} · {overview.openTabs} open {overview.openTabs===1?'tab':'tabs'}</p></div><div className="mt-4 flex items-center gap-3 border-t border-[#46505e] pt-4"><div className="flex size-9 items-center justify-center rounded-full bg-[#d8e7ff] text-xs font-bold text-[#39485a]">{initials(session?.user?.name)}</div><div className="flex-1"><p className="text-sm font-bold">{session?.user?.name ?? 'Signed in'}</p><p className="text-xs text-[#aeb9c8]">{role}</p></div></div></aside>{mobile&&<button aria-label="Close menu" className="fixed inset-0 z-30 bg-black/30 lg:hidden" onClick={()=>setMobile(false)}/>}<section className="min-w-0 flex-1"><header className="flex min-h-[78px] items-center justify-between border-b border-[#e2e7ee] bg-white px-5 md:px-9"><div className="flex items-center gap-3"><button aria-label="Open menu" onClick={()=>setMobile(true)} className="rounded-xl p-2 lg:hidden"><Menu/></button><div><p className="text-xs font-semibold text-[#8a96a5]">{todayLabel||'Today'}</p><h1 className="mt-1 text-[22px] font-bold tracking-tight">{`${timeGreeting}, ${session?.user?.name ?? role}`}</h1></div></div><div className="flex items-center gap-2"><span className={`hidden items-center gap-2 rounded-full px-3 py-2 text-xs font-bold md:flex ${overview.cashDrawer.dayLocked?'bg-[#fdecea] text-[#a13d3d]':'bg-[#e5f4e9] text-[#47815a]'}`}><span className={`size-2 rounded-full ${overview.cashDrawer.dayLocked?'bg-[#e07777]':'bg-[#65b579]'}`}/>{overview.cashDrawer.dayLocked?'Day closed':overview.cashDrawer.dayStatus==='open'?'Day open':'Day not started'}</span></div></header><div className="p-5 md:p-9"><Overview go={go} role={role} low={low} data={overview} loading={overviewLoading} error={overviewError} refresh={()=>void refreshLiveData()} greeting={timeGreeting} range={range} setRange={setRange} rangeOpen={rangeOpen} setRangeOpen={setRangeOpen} rangeOptions={rangeOptions}/></div></section></div>{notice&&<div role="status" className="fixed bottom-5 right-5 z-50 flex items-center gap-3 rounded-2xl bg-[#282d35] px-5 py-4 text-sm font-bold text-white shadow-2xl"><Check className="size-5 text-[#bce3c6]"/>{notice}<button onClick={()=>setNotice('')}><X className="size-4"/></button></div>}</main></>}
 
 function Shell({eyebrow,title,sub,children,action}:{eyebrow:string;title:string;sub:string;children:any;action?:React.ReactNode}){return <div className="mx-auto w-full max-w-[1180px]"><header className="mb-8 flex flex-col items-center gap-4 text-center"><div><p className="mb-2 text-xs font-bold uppercase tracking-[.16em] text-[#8a96a5]">{eyebrow}</p><h2 className="text-3xl font-bold tracking-tight md:text-4xl">{title}</h2><p className="mx-auto mt-2 max-w-2xl text-sm text-[#7c8796]">{sub}</p></div>{action}</header>{children}</div>}
@@ -358,43 +371,172 @@ function Audit(){
     </div>
   </TablePage>
 }
-function SettingsPage({toast}:any){
-  const defaults={currency:'UGX',tax_rate:'0',language:'en',date_format:'DD/MM/YYYY',allow_negative_stock:'false'};
-  const [loggingOut,setLoggingOut]=useState(false);
+type Preferences={currency:string;barName:string}
+const settingsLabel='text-[11px] font-bold uppercase tracking-wide text-[#8a96a5]'
+const settingsFactLabel='text-[10px] font-bold uppercase tracking-wide text-[#8a96a5]'
+const settingsField='h-12 w-full rounded-xl border border-[#dce3ec] bg-white px-4 text-sm outline-none transition focus:border-[#7fa9e0] focus:ring-4 focus:ring-[#7fa9e0]/15 disabled:bg-[#f7f9fc]'
+function SettingCard({icon:Icon,title,sub,action,children}:{icon:any;title:string;sub:string;action?:React.ReactNode;children:any}){
+  return <section className="rounded-2xl border border-[#e0e6ee] bg-white shadow-[0_6px_18px_rgba(57,72,90,.04)]">
+    <header className="flex items-start gap-3 border-b border-[#edf0f4] px-5 py-4">
+      <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-[#eef4fb] text-[#4a6a8f]"><Icon className="size-5"/></span>
+      <div className="min-w-0 flex-1"><h3 className="text-sm font-bold">{title}</h3><p className="mt-0.5 text-xs leading-relaxed text-[#8a96a5]">{sub}</p></div>
+      {action}
+    </header>
+    <div className="p-5">{children}</div>
+  </section>
+}
+function SettingsSkeleton(){
+  return <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1.25fr)_minmax(0,1fr)]">
+    {[0,1].map(column=><div key={column} className="flex flex-col gap-5">
+      {[0,1].map(card=><div key={card} className="rounded-2xl border border-[#e0e6ee] bg-white p-5 shadow-[0_6px_18px_rgba(57,72,90,.04)]">
+        <div className="flex items-center gap-3"><span className="size-10 animate-pulse rounded-xl bg-[#eef1f6]"/><div className="flex-1 space-y-2"><span className="block h-3.5 w-32 animate-pulse rounded bg-[#eef1f6]"/><span className="block h-3 w-48 animate-pulse rounded bg-[#f3f5f9]"/></div></div>
+        <div className="mt-5 grid gap-4 sm:grid-cols-2"><span className="h-11 animate-pulse rounded-xl bg-[#f3f5f9]"/><span className="h-11 animate-pulse rounded-xl bg-[#f3f5f9]"/></div>
+      </div>)}
+    </div>)}
+  </div>
+}
+function SettingsPage({toast,user,role,currency,businessName,onPreferencesSaved}:{toast:(message:string)=>void;user?:{name?:string|null;email?:string|null}|null;role:string;currency:string;businessName:string;onPreferencesSaved:(next:Preferences)=>void}){
+  // Props seed the first paint; the saved record from the API is authoritative once it loads.
+  const initial=useRef({currency,businessName});
   const [loading,setLoading]=useState(true);
-  const [settings,setSettings]=useState<Record<string,string>>(defaults);
-  const [saved,setSaved]=useState<Record<string,string>>(defaults);
+  const [loadError,setLoadError]=useState('');
+  const [reloadKey,setReloadKey]=useState(0);
+  const [timeZone,setTimeZone]=useState('Africa/Kampala');
+  const [businessDate,setBusinessDate]=useState('');
+  const [tradingDay,setTradingDay]=useState<{status?:string;businessDate?:string;openedAt?:string;openingFloat?:number}|null>(null);
+  const [saved,setSaved]=useState<Preferences>({currency:initial.current.currency,barName:initial.current.businessName});
+  const [draft,setDraft]=useState<Preferences>({currency:initial.current.currency,barName:initial.current.businessName});
+  const [saving,setSaving]=useState(false);
   const [hasPin,setHasPin]=useState<boolean|null>(null);
+  const [pinError,setPinError]=useState('');
   const [pin,setPin]=useState('');
+  const [confirmPin,setConfirmPin]=useState('');
+  const [revealPin,setRevealPin]=useState(false);
   const [savingPin,setSavingPin]=useState(false);
-  useEffect(()=>{fetch('/api/settings',{cache:'no-store'}).then(r=>r.ok?r.json():null).then(d=>{if(!d?.items)return; const loaded=Object.fromEntries(d.items.map((x:any)=>[x.key,String(x.value)])); setSettings(s=>({...s,...loaded})); setSaved(s=>({...s,...loaded}))}).catch(()=>undefined).finally(()=>setLoading(false))},[]);
-  useEffect(()=>{fetch('/api/team/pin',{cache:'no-store'}).then(r=>r.ok?r.json():null).then(d=>{if(d)setHasPin(Boolean(d.hasPin))}).catch(()=>undefined)},[]);
-  const update=(key:string,value:string)=>setSettings(s=>({...s,[key]:value}));
-  // Persist on blur instead of on every keystroke, and only when the value actually changed.
-  const persist=async(key:string)=>{const value=settings[key]??''; if(saved[key]===value)return; const result=await fetch('/api/settings',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({key,value})}); if(!result.ok){toast(`Could not save ${key.replaceAll('_',' ')}.`); return} setSaved(s=>({...s,[key]:value})); toast(`${key.replaceAll('_',' ')} saved.`)};
-  const savePin=async()=>{if(pin.length<4){toast('A PIN must be 4 to 8 digits.');return} setSavingPin(true); const result=await fetch('/api/team/pin',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({pin})}); setSavingPin(false); if(!result.ok){toast('Could not save the approval PIN.');return} setHasPin(true); setPin(''); toast('Approval PIN saved.')};
-  const logout=async()=>{setLoggingOut(true); try{await signOut(); window.location.assign('/sign-in')}catch{toast('Could not sign out. Please try again.');setLoggingOut(false)}};
-  const field='mt-2 h-12 w-full rounded-xl border border-[#dce3ec] bg-white px-4 text-sm';
-  return <TablePage title="Settings" sub={loading?'Loading saved settings…':'Saved settings apply to every till signed in to this bar.'}>
-    <div className="grid gap-5 p-5 md:grid-cols-2">
-      <label className="text-xs font-bold text-[#687587]">Currency<input value={settings.currency} onChange={e=>update('currency',e.target.value)} onBlur={()=>persist('currency')} placeholder="UGX" className={field}/></label>
-      <label className="text-xs font-bold text-[#687587]">Tax rate (%)<input type="number" min="0" max="100" step="0.01" value={settings.tax_rate} onChange={e=>update('tax_rate',e.target.value)} onBlur={()=>persist('tax_rate')} className={field}/></label>
-      <label className="text-xs font-bold text-[#687587]">Language<select value={settings.language} onChange={e=>update('language',e.target.value)} onBlur={()=>persist('language')} className={field}><option value="en">English</option><option value="fr">French</option><option value="sw">Swahili</option></select></label>
-      <label className="text-xs font-bold text-[#687587]">Date format<select value={settings.date_format} onChange={e=>update('date_format',e.target.value)} onBlur={()=>persist('date_format')} className={field}><option value="DD/MM/YYYY">DD/MM/YYYY</option><option value="MM/DD/YYYY">MM/DD/YYYY</option><option value="YYYY-MM-DD">YYYY-MM-DD</option></select></label>
-      <label className="text-xs font-bold text-[#687587]">Allow negative stock<select value={settings.allow_negative_stock} onChange={e=>update('allow_negative_stock',e.target.value)} onBlur={()=>persist('allow_negative_stock')} className={field}><option value="false">Blocked</option><option value="true">Manager override</option></select></label>
-    </div>
-    <div className="border-t border-[#e0e6ee] p-5">
-      <h3 className="text-lg font-bold">Approval PIN</h3>
-      <p className="mt-1 text-xs text-[#8a96a5]">Managers enter this PIN to void a tab. It is stored only as a digest and cannot be read back.</p>
-      <div className="mt-4 flex flex-wrap items-end gap-3">
-        <label className="w-56 text-xs font-bold text-[#687587]">New PIN<input type="password" inputMode="numeric" maxLength={8} autoComplete="new-password" value={pin} onChange={e=>setPin(e.target.value.replace(/\D/g,'').slice(0,8))} placeholder="4–8 digits" className={field}/></label>
-        <button type="button" onClick={savePin} disabled={savingPin||pin.length<4} className="h-12 rounded-xl bg-[#292d34] px-5 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-40">{savingPin?'Saving…':hasPin?'Replace PIN':'Set PIN'}</button>
-        <span className={`pb-3 text-xs font-bold ${hasPin===null?'text-[#8a96a5]':hasPin?'text-[#47815a]':'text-[#b87555]'}`}>{hasPin===null?'Checking…':hasPin?'PIN is set':'No PIN set — voids will be rejected'}</span>
-      </div>
-    </div>
-    <div className="flex flex-wrap justify-end gap-3 border-t border-[#e0e6ee] p-5">
-      <button onClick={()=>window.location.assign('/api/export')} className="rounded-xl bg-[#292d34] px-4 py-3 text-sm font-bold text-white"><Download className="mr-2 inline size-4"/>Export Data (CSV)</button>
-      <button type="button" onClick={logout} disabled={loggingOut} className="rounded-xl border border-[#e5b7b7] px-4 py-3 text-sm font-bold text-red-600 transition hover:bg-[#fff4f4] disabled:cursor-not-allowed disabled:opacity-60">{loggingOut?'Signing out…':'Sign out'}</button>
-    </div>
-  </TablePage>
+  const [loggingOut,setLoggingOut]=useState(false);
+  useEffect(()=>{
+    let active=true;
+    setLoading(true); setLoadError('');
+    Promise.all([
+      fetch('/api/settings',{cache:'no-store'}),
+      fetch('/api/day',{cache:'no-store'}),
+      fetch('/api/team/pin',{cache:'no-store'}),
+    ]).then(async([settingsRes,dayRes,pinRes])=>{
+      if(!settingsRes.ok){const body=await settingsRes.json().catch(()=>({})); throw new Error(body?.error??'Could not load settings.')}
+      const data=await settingsRes.json();
+      const items=new Map<string,string>((data?.items??[]).map((row:any)=>[String(row.key),String(row.value)]));
+      const loadedName=String(items.get('bar_name')??initial.current.businessName).replace(/\s+/g,' ').trim().slice(0,60);
+      const next:Preferences={currency:normalizeCurrency(items.get('currency'))||initial.current.currency,barName:loadedName||BAR_NAME_FALLBACK};
+      if(!active)return;
+      setSaved(next); setDraft(next);
+      setTimeZone(String(data?.timeZone??'Africa/Kampala'));
+      setBusinessDate(String(data?.businessDate??''));
+      if(dayRes.ok){const record=await dayRes.json().catch(()=>null); if(active)setTradingDay(record??null)}
+      if(pinRes.ok){const record=await pinRes.json().catch(()=>null); if(active)setHasPin(Boolean(record?.hasPin))}
+    }).catch((error:any)=>{if(active)setLoadError(error?.message??'Could not load settings. Check your connection and retry.')}).finally(()=>{if(active)setLoading(false)});
+    return()=>{active=false}
+  },[reloadKey]);
+  const currencyDraft=normalizeCurrency(draft.currency);
+  const nameDraft=draft.barName.replace(/\s+/g,' ').trim();
+  const nameValid=nameDraft.length>=2;
+  const dirty=currencyDraft!==saved.currency||nameDraft!==saved.barName;
+  const canSave=dirty&&!saving&&Boolean(currencyDraft)&&nameValid;
+  const pinValid=/^\d{4,8}$/.test(pin);
+  const pinMatches=pin.length>0&&pin===confirmPin;
+  const pinMessage=pinError||(!pin?'Use 4 to 8 digits.':!pinValid?'A PIN must be 4 to 8 digits.':!pinMatches?'The two PINs do not match.':pin.length<6?'Short PINs are easy to guess.':'PINs match. Ready to save.');
+  const savePreferences=async()=>{
+    if(!currencyDraft){toast('Enter a 2–5 letter currency code such as UGX.'); return}
+    if(!nameValid){toast('The business name needs at least 2 characters.'); return}
+    const wanted:Preferences={currency:currencyDraft,barName:nameDraft};
+    const updates:[string,string][]=[];
+    if(wanted.currency!==saved.currency)updates.push(['currency',wanted.currency]);
+    if(wanted.barName!==saved.barName)updates.push(['bar_name',wanted.barName]);
+    setSaving(true);
+    const applied:Preferences={...saved};
+    let failure='';
+    for(const [key,value] of updates){
+      try{
+        const result=await fetch('/api/settings',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({key,value})});
+        if(!result.ok){const body=await result.json().catch(()=>({})); failure=body?.error??'Could not save settings.'; break}
+        if(key==='currency')applied.currency=value; else applied.barName=value;
+      }catch{failure='Could not reach the server. Check your connection and retry.'; break}
+    }
+    setSaving(false); setSaved(applied); setDraft(applied);
+    if(applied.currency!==saved.currency||applied.barName!==saved.barName)onPreferencesSaved(applied);
+    toast(failure||'Settings saved for this account.');
+  };
+  const discardPreferences=()=>setDraft(saved);
+  const savePin=async()=>{
+    if(!pinValid){setPinError('A PIN must be 4 to 8 digits.'); return}
+    if(!pinMatches){setPinError('The two PINs do not match.'); return}
+    setSavingPin(true); setPinError('');
+    try{
+      const result=await fetch('/api/team/pin',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({pin})});
+      if(!result.ok){const body=await result.json().catch(()=>({})); throw new Error(body?.error??'Could not save the approval PIN.')}
+      setHasPin(true); setPin(''); setConfirmPin(''); setRevealPin(false); toast('Approval PIN saved.');
+    }catch(error:any){setPinError(error?.message??'Could not save the approval PIN.')}
+    finally{setSavingPin(false)}
+  };
+  const logout=async()=>{setLoggingOut(true); try{await signOut(); window.location.assign('/sign-in')}catch{toast('Could not sign out. Please try again.'); setLoggingOut(false)}};
+  if(loading) return <Shell eyebrow="Manager workspace" title="Settings" sub="Preferences, approvals, and account controls for this bar."><SettingsSkeleton/></Shell>;
+  return <Shell eyebrow="Manager workspace" title="Settings" sub="Preferences, approvals, and account controls for this bar.">
+    {loadError
+      ? <div className="rounded-2xl border border-[#f3c9c9] bg-white p-8 text-center shadow-[0_6px_18px_rgba(57,72,90,.04)]">
+          <span className="mx-auto flex size-12 items-center justify-center rounded-full bg-[#fdecea] text-[#a13d3d]"><AlertTriangle className="size-6"/></span>
+          <h3 className="mt-3 text-base font-bold">Settings could not load</h3>
+          <p className="mx-auto mt-1 max-w-md text-sm text-[#7c8796]">{loadError}</p>
+          <button type="button" onClick={()=>setReloadKey(key=>key+1)} className="mt-4 inline-flex items-center gap-2 rounded-xl bg-[#292d34] px-4 py-2.5 text-sm font-bold text-white"><RefreshCw className="size-4"/>Retry</button>
+        </div>
+      : <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1.25fr)_minmax(0,1fr)]">
+          <div className="flex flex-col gap-5">
+            <SettingCard icon={Wallet} title="Preferences" sub="Currency and receipt header for everything you print and see." action={<span className={`rounded-full px-2.5 py-1 text-[10px] font-bold uppercase ${dirty?'bg-[#fdf0e8] text-[#b87555]':'bg-[#e5f4e9] text-[#47815a]'}`}>{dirty?'Unsaved':'Saved'}</span>}>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <label className="block"><span className={settingsLabel}>Business name</span><input value={draft.barName} onChange={event=>setDraft({...draft,barName:event.target.value})} maxLength={60} disabled={saving} placeholder="THE SIPPER" className={`mt-2 ${settingsField}`}/><span className="mt-1.5 block text-[11px] leading-relaxed text-[#8a96a5]">Printed at the top of every receipt and bar ticket.</span></label>
+                <label className="block"><span className={settingsLabel}>Currency</span><input list="currency-options" value={draft.currency} onChange={event=>setDraft({...draft,currency:event.target.value.toUpperCase()})} maxLength={5} disabled={saving} placeholder="UGX" className={`mt-2 ${settingsField} uppercase tracking-wide`}/><datalist id="currency-options">{CURRENCY_OPTIONS.map(code=><option key={code} value={code}/>)}</datalist><span className="mt-1.5 block text-[11px] leading-relaxed text-[#8a96a5]">Prices show as <b className="text-[#5c6a7c]">{currencyDraft||'???'} 12,000</b>.</span></label>
+              </div>
+              <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-[#edf0f4] pt-4">
+                <span className={`text-xs font-semibold ${dirty?'text-[#b87555]':'text-[#8a96a5]'}`}>{dirty?'You have unsaved changes.':'Up to date on this device.'}</span>
+                <div className="flex gap-2">
+                  <button type="button" onClick={discardPreferences} disabled={!dirty||saving} className="rounded-xl border border-[#dce3ec] px-4 py-2.5 text-sm font-bold text-[#5c6a7c] transition hover:bg-[#f7f9fc] disabled:cursor-not-allowed disabled:opacity-40">Discard</button>
+                  <button type="button" onClick={savePreferences} disabled={!canSave} className="inline-flex items-center gap-2 rounded-xl bg-[#292d34] px-4 py-2.5 text-sm font-bold text-white transition hover:bg-[#3a404a] disabled:cursor-not-allowed disabled:opacity-40">{saving?<Loader2 className="size-4 animate-spin"/>:<Save className="size-4"/>}{saving?'Saving…':'Save changes'}</button>
+                </div>
+              </div>
+            </SettingCard>
+            <SettingCard icon={Lock} title="Approval PIN" sub="Required when a manager voids a tab or approves a sensitive action." action={<span className={`rounded-full px-2.5 py-1 text-[10px] font-bold uppercase ${hasPin===null?'bg-[#f3f5f9] text-[#8a96a5]':hasPin?'bg-[#e5f4e9] text-[#47815a]':'bg-[#fdf0e8] text-[#b87555]'}`}>{hasPin===null?'Unknown':hasPin?'PIN set':'No PIN'}</span>}>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <label className="block"><span className={settingsLabel}>New PIN</span><div className="relative mt-2"><input type={revealPin?'text':'password'} inputMode="numeric" autoComplete="new-password" maxLength={8} value={pin} onChange={event=>{setPin(event.target.value.replace(/\D/g,'').slice(0,8)); setPinError('')}} placeholder="4–8 digits" className={`${settingsField} pr-12 tracking-[.2em]`}/><button type="button" aria-label={revealPin?'Hide PIN':'Show PIN'} onClick={()=>setRevealPin(value=>!value)} className="absolute inset-y-0 right-0 flex w-12 items-center justify-center text-[#8a96a5] transition hover:text-[#5c6a7c]">{revealPin?<EyeOff className="size-4"/>:<Eye className="size-4"/>}</button></div></label>
+                <label className="block"><span className={settingsLabel}>Confirm PIN</span><input type={revealPin?'text':'password'} inputMode="numeric" autoComplete="new-password" maxLength={8} value={confirmPin} onChange={event=>{setConfirmPin(event.target.value.replace(/\D/g,'').slice(0,8)); setPinError('')}} placeholder="Repeat the PIN" className={`mt-2 ${settingsField} tracking-[.2em]`}/></label>
+              </div>
+              <p className={`mt-2 text-[11px] font-semibold ${pinError||(!pinMatches&&confirmPin.length>0)?'text-[#a13d3d]':pinValid&&pinMatches?'text-[#47815a]':'text-[#8a96a5]'}`}>{pinMessage}</p>
+              <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-[#edf0f4] pt-4">
+                <p className="max-w-xs text-[11px] leading-relaxed text-[#8a96a5]">Stored only as a digest. {hasPin===null?'PIN status could not be confirmed.':hasPin?'Saving a new PIN replaces the old one immediately.':'Without a PIN, manager voids are rejected.'}</p>
+                <button type="button" onClick={savePin} disabled={savingPin||!pinValid||!pinMatches} className="inline-flex items-center gap-2 rounded-xl bg-[#292d34] px-4 py-2.5 text-sm font-bold text-white transition hover:bg-[#3a404a] disabled:cursor-not-allowed disabled:opacity-40">{savingPin?<Loader2 className="size-4 animate-spin"/>:<KeyRound className="size-4"/>}{savingPin?'Saving…':hasPin?'Replace PIN':'Set PIN'}</button>
+              </div>
+            </SettingCard>
+          </div>
+          <div className="flex flex-col gap-5">
+            <SettingCard icon={Clock} title="Trading context" sub="Read-only facts from the bar's clock and today's session.">
+              <dl className="grid grid-cols-2 gap-3">
+                <div className="rounded-xl bg-[#f7f9fc] p-3"><dt className={settingsFactLabel}>Business date</dt><dd className="mt-1 text-sm font-bold">{businessDate||tradingDay?.businessDate||'—'}</dd></div>
+                <div className="rounded-xl bg-[#f7f9fc] p-3"><dt className={settingsFactLabel}>Time zone</dt><dd className="mt-1 truncate text-sm font-bold" title={timeZone}>{timeZone}</dd></div>
+                <div className="rounded-xl bg-[#f7f9fc] p-3"><dt className={settingsFactLabel}>Day status</dt><dd className="mt-1 text-sm font-bold">{tradingDay?.status==='open'?'Open':tradingDay?.status==='closed'?'Closed':'Not started'}</dd></div>
+                <div className="rounded-xl bg-[#f7f9fc] p-3"><dt className={settingsFactLabel}>Opening float</dt><dd className="mt-1 text-sm font-bold">{money(tradingDay?.openingFloat??0)}</dd></div>
+              </dl>
+              {tradingDay?.openedAt&&<p className="mt-3 text-[11px] text-[#8a96a5]">Session opened {new Date(tradingDay.openedAt).toLocaleString([], {day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})}.</p>}
+            </SettingCard>
+            <SettingCard icon={Database} title="Data export" sub="Download a CSV snapshot of this account's records.">
+              <p className="text-[11px] leading-relaxed text-[#7c8796]">Products, sales, line items, tabs, stock movements, deliveries, counts, team, trading days, discounts, receipts, and the audit log — up to 10,000 rows per table.</p>
+              <button type="button" onClick={()=>window.location.assign('/api/export')} className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-xl border border-[#dce3ec] bg-white px-4 py-3 text-sm font-bold text-[#3f4c5d] transition hover:bg-[#f7f9fc]"><Download className="size-4"/>Export all tables (CSV)</button>
+            </SettingCard>
+            <SettingCard icon={UserRound} title="Account" sub="The person signed in on this till.">
+              <div className="flex items-center gap-3">
+                <span className="flex size-11 shrink-0 items-center justify-center rounded-full bg-[#eef4fb] text-sm font-bold text-[#4a6a8f]">{initials(user?.name)}</span>
+                <div className="min-w-0 flex-1"><p className="truncate text-sm font-bold">{user?.name??'Signed in'}</p><p className="truncate text-[11px] text-[#8a96a5]">{user?.email??'No email on file'}</p></div>
+                <span className="rounded-full bg-[#eef4fb] px-2.5 py-1 text-[10px] font-bold uppercase text-[#4a6a8f]">{role}</span>
+              </div>
+              <button type="button" onClick={logout} disabled={loggingOut} className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-xl border border-[#e5b7b7] px-4 py-3 text-sm font-bold text-red-600 transition hover:bg-[#fff4f4] disabled:cursor-not-allowed disabled:opacity-60">{loggingOut?<Loader2 className="size-4 animate-spin"/>:<LogOut className="size-4"/>}{loggingOut?'Signing out…':'Sign out'}</button>
+            </SettingCard>
+          </div>
+        </div>}
+  </Shell>
 }

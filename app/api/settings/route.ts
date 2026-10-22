@@ -4,12 +4,14 @@ import { authErrorResponse, requirePermission } from '@/lib/permissions'
 import { auditEvent } from '@/lib/audit'
 import { db } from '@/lib/db'
 import { auditLogs, settings } from '@/lib/db/schema'
+import { BAR_TIME_ZONE, businessDate } from '@/lib/time'
 
 export async function GET() {
   try {
     const user = await requirePermission('settings.read')
     const rows = await db.select().from(settings).where(eq(settings.userId, user.id))
-    return NextResponse.json({ items: rows })
+    // Device clocks cannot be trusted for a bar's day, so the server states both facts.
+    return NextResponse.json({ items: rows, timeZone: BAR_TIME_ZONE, businessDate: businessDate() })
   } catch (error) {
     return authErrorResponse(error) ?? NextResponse.json({ error: 'Could not load settings' }, { status: 500 })
   }
@@ -20,9 +22,24 @@ export async function POST(request: Request) {
     const user = await requirePermission('settings.write')
     const body = await request.json()
     const key = typeof body.key === 'string' ? body.key.slice(0, 100) : ''
-    const value = typeof body.value === 'string' ? body.value.slice(0, 1000) : ''
+    const submitted = typeof body.value === 'string' ? body.value.slice(0, 1000) : ''
 
-    if (!key || !value) return NextResponse.json({ error: 'Invalid setting' }, { status: 400 })
+    if (!key || !submitted) return NextResponse.json({ error: 'Invalid setting' }, { status: 400 })
+
+    // Settings the UI relies on are normalised here so two tills cannot store conflicting shapes.
+    let value = submitted
+    if (key === 'currency') {
+      value = submitted.trim().toUpperCase()
+      if (!/^[A-Z]{2,5}$/.test(value)) {
+        return NextResponse.json({ error: 'Currency must be a 2–5 letter code such as UGX.' }, { status: 400 })
+      }
+    }
+    if (key === 'bar_name') {
+      value = submitted.replace(/\s+/g, ' ').trim().slice(0, 60)
+      if (value.length < 2) {
+        return NextResponse.json({ error: 'Business name must be at least 2 characters.' }, { status: 400 })
+      }
+    }
 
     const [previous] = await db
       .select({ value: settings.value })
