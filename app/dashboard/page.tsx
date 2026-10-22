@@ -347,85 +347,180 @@ function MenuPage({inventory,onSave}:{inventory:Product[];onSave:(item:Product)=
   </TablePage>
 }
 function Team({toast}:any){const [open,setOpen]=useState(false); const [name,setName]=useState(''); const [role,setRole]=useState<Role>('Cashier'); const [pin,setPin]=useState(''); const [members,setMembers]=useState<any[]>([]); useEffect(()=>{fetch('/api/team').then(r=>r.ok?r.json():[]).then(rows=>setMembers(Array.isArray(rows)?rows:[])).catch(()=>setMembers([]))},[]); const access=role==='Manager'?'Full access':role==='Storekeeper'?'Stock only':'Sales & payment'; const submit=async(e:React.FormEvent)=>{e.preventDefault();if(!name.trim()||pin.length<4)return;const memberName=name.trim();const result=await fetch('/api/team',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({name:memberName,role,pin})});if(!result.ok){toast('Could not add team member.');return}const member=await result.json();setMembers(m=>[...m,member]);setName('');setPin('');setRole('Cashier');setOpen(false);toast(`${memberName} added to the team.`)}; return <TablePage title="Team & permissions" sub="Personal PINs, role access, and approval controls for your bar." action={<button onClick={()=>setOpen(true)} className="rounded-md bg-[#1f883d] px-4 py-3 text-sm font-bold text-white"><Plus className="mr-2 inline size-4"/>Add team member</button>}><div className="overflow-x-auto"><table className="w-full min-w-[650px] text-left text-sm"><thead className="bg-[#f6f8fa] text-xs uppercase text-[#57606a]"><tr><th className="p-4">Team member</th><th>Role</th><th>Added</th><th>Access</th></tr></thead><tbody>{members.map((member:any)=><tr key={member.id} className="border-t border-[#eaeef2]"><td className="p-4 font-bold">{member.name}</td><td>{member.role}</td><td className="text-[#57606a]">{member.createdAt?new Date(member.createdAt).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'}):'—'}</td><td><span className="rounded-full bg-[#ddf4ff] px-2 py-1 text-[10px] font-bold text-[#0969da]">{member.role==='Manager'?'Full access':member.role==='Storekeeper'?'Stock only':'Sales & payment'}</span></td></tr>)}</tbody></table></div>{open&&<div className="fixed inset-0 z-50 flex items-center justify-center bg-[#1f2328]/50 p-4" role="dialog" aria-modal="true"><form onSubmit={submit} className="w-full max-w-lg rounded-md border border-[#d0d7de] bg-white p-6 shadow-lg"><div className="flex items-start justify-between"><div><p className="text-[11px] font-semibold uppercase tracking-[.06em] text-[#57606a]">Team setup</p><h3 className="mt-1 text-lg font-semibold">Add team member</h3><p className="mt-1 text-sm text-[#57606a]">Create a staff profile and choose their access.</p></div><button type="button" aria-label="Close dialog" onClick={()=>setOpen(false)} className="rounded-lg p-2 hover:bg-[#f6f8fa]"><X className="size-5"/></button></div><div className="mt-6 grid gap-4"><label className="text-xs font-bold text-[#57606a]">Full name<input autoFocus required value={name} onChange={e=>setName(e.target.value)} placeholder="e.g. Daniel O." className="mt-2 h-10 w-full rounded-md border border-[#d0d7de] px-4 text-sm"/></label><label className="text-xs font-bold text-[#57606a]">Role<select value={role} onChange={e=>setRole(e.target.value as Role)} className="mt-2 h-10 w-full rounded-md border border-[#d0d7de] bg-white px-4 text-sm"><option>Cashier</option><option>Manager</option><option>Storekeeper</option></select></label><label className="text-xs font-bold text-[#57606a]">Personal PIN<input required minLength={4} maxLength={6} inputMode="numeric" type="password" value={pin} onChange={e=>setPin(e.target.value.replace(/\D/g,'').slice(0,6))} placeholder="4–6 digits" className="mt-2 h-10 w-full rounded-md border border-[#d0d7de] px-4 text-sm"/></label><div className="rounded-md bg-[#f6f8fa] p-4 text-sm"><span className="text-xs font-bold uppercase tracking-wider text-[#57606a]">Access granted</span><p className="mt-1 font-bold">{access}</p></div></div><div className="mt-6 flex justify-end gap-3"><button type="button" onClick={()=>setOpen(false)} className="rounded-md border border-[#d0d7de] px-4 py-3 text-sm font-bold">Cancel</button><button type="submit" className="rounded-md bg-[#1f883d] px-5 py-3 text-sm font-bold text-white">Add member</button></div></form></div>}</TablePage>}
-const AUDIT_ACTIONS:[string,string][]=[['all','All actions'],['void','Void'],['discount','Discount'],['settle','Tab settled'],['price_change','Price change'],['delivery','Delivery'],['transfer','Stock transfer'],['day_close','Day close'],['settings_change','Setting changed'],['team_add','Team member added'],['pin_change','Approval PIN']]
-const auditActionLabel=(value:string)=>AUDIT_ACTIONS.find(([key])=>key===value)?.[1]??value.replaceAll('_',' ')
-const auditActionTone=(value:string)=>value==='void'?'bg-[#ffebe9] text-[#cf222e]':value==='discount'||value==='price_change'?'bg-[#fff8c5] text-[#9a6700]':value==='delivery'||value==='settle'?'bg-[#dafbe1] text-[#1a7f37]':'bg-[#f6f8fa] text-[#1f2328]'
-const auditApprovalTone=(value:string)=>value==='admin'?'bg-[#fbefff] text-[#8250df]':value==='manager'?'bg-[#fff8c5] text-[#9a6700]':'bg-[#f6f8fa] text-[#57606a]'
-const auditWindow=(period:string)=>{const day=(offset:number)=>{const date=new Date();date.setUTCDate(date.getUTCDate()-offset);return date.toISOString().slice(0,10)};return period==='today'?day(0):period==='7d'?day(6):period==='30d'?day(29):''}
+const AUDIT_ACTION_META:Record<string,{label:string;tone:string}>={open:{label:'Tab opened',tone:'bg-[#ddf4ff] text-[#0969da]'},settle:{label:'Tab settled',tone:'bg-[#dafbe1] text-[#1a7f37]'},close:{label:'Tab closed',tone:'bg-[#f6f8fa] text-[#57606a]'},void:{label:'Void',tone:'bg-[#ffebe9] text-[#cf222e]'},discount:{label:'Discount',tone:'bg-[#fff8c5] text-[#9a6700]'},price_change:{label:'Price change',tone:'bg-[#fff8c5] text-[#9a6700]'},delivery:{label:'Delivery',tone:'bg-[#dafbe1] text-[#1a7f37]'},transfer:{label:'Stock transfer',tone:'bg-[#ddf4ff] text-[#0969da]'},tolerance_change:{label:'Tolerance change',tone:'bg-[#fff8c5] text-[#9a6700]'},day_close:{label:'Day close',tone:'bg-[#dafbe1] text-[#1a7f37]'},settings_change:{label:'Setting changed',tone:'bg-[#f6f8fa] text-[#1f2328]'},team_add:{label:'Team member added',tone:'bg-[#ddf4ff] text-[#0969da]'},pin_change:{label:'Approval PIN',tone:'bg-[#fbefff] text-[#8250df]'},count:{label:'Stock count',tone:'bg-[#ddf4ff] text-[#0969da]'},wastage:{label:'Wastage',tone:'bg-[#ffebe9] text-[#cf222e]'}}
+const AUDIT_ENTITY_LABELS:Record<string,string>={product:'Product',sale:'Sale',tab:'Tab',stock_delivery:'Delivery',stock_transfer:'Transfer',day:'Trading day',team_member:'Team member',setting:'Setting',approval_pin:'Approval PIN',variance_tolerance:'Variance tolerance',inventory_count:'Inventory count',stock_adjustment:'Stock adjustment'}
+const auditActionMeta=(value:string)=>AUDIT_ACTION_META[value]??{label:value.replaceAll('_',' '),tone:'bg-[#f6f8fa] text-[#1f2328]'}
+const auditEntityLabel=(value:string)=>AUDIT_ENTITY_LABELS[value]??value.replaceAll('_',' ')
+const auditApprovalMeta=(value:string)=>{
+  if(value==='admin')return{label:'Admin',tone:'bg-[#fbefff] text-[#8250df]',hint:'The acting account was an Admin, who bypasses PIN prompts.'}
+  if(value==='manager')return{label:'Manager',tone:'bg-[#fff8c5] text-[#9a6700]',hint:'The acting account was a Manager. PIN checks are not stored separately.'}
+  return{label:'Recorded',tone:'bg-[#f6f8fa] text-[#57606a]',hint:'Stock and operational events recorded without an approval step.'}
+}
+const auditRelative=(value:string)=>{
+  const then=new Date(value).getTime(); if(!Number.isFinite(then))return ''
+  const minutes=Math.round((Date.now()-then)/60000)
+  if(minutes<1)return 'just now'
+  if(minutes<60)return `${minutes}m ago`
+  const hours=Math.round(minutes/60); if(hours<24)return `${hours}h ago`
+  const days=Math.round(hours/24); if(days<7)return `${days}d ago`
+  return new Date(value).toLocaleDateString([], {day:'numeric',month:'short'})
+}
+const auditDayKey=(value:string)=>new Date(value).toLocaleDateString()
+const auditDayLabel=(value:string)=>new Date(value).toLocaleDateString([], {weekday:'long',day:'numeric',month:'long',year:'numeric'})
+const auditValue=(value:unknown)=>typeof value==='number'?value.toLocaleString('en-US'):typeof value==='object'?JSON.stringify(value):String(value)
+const auditDiff=(metadata:unknown)=>{
+  if(!metadata||typeof metadata!=='object')return null
+  const record=metadata as Record<string,unknown>
+  for(const [before,after] of [['from','to'],['previous','value']] as [string,string][]){
+    if(before in record&&after in record)return{before:record[before],after:record[after],keys:[before,after] as [string,string]}
+  }
+  return null
+}
 
 function Audit(){
   const [events,setEvents]=useState<any[]>([])
   const [total,setTotal]=useState(0)
-  const [limit,setLimit]=useState(100)
+  const [offset,setOffset]=useState(0)
   const [hasMore,setHasMore]=useState(false)
   const [loading,setLoading]=useState(true)
+  const [loadingMore,setLoadingMore]=useState(false)
   const [error,setError]=useState('')
   const [period,setPeriod]=useState('30d')
+  const [customFrom,setCustomFrom]=useState('')
+  const [customTo,setCustomTo]=useState('')
   const [action,setAction]=useState('all')
+  const [entityType,setEntityType]=useState('')
+  const [search,setSearch]=useState('')
   const [query,setQuery]=useState('')
+  const [facets,setFacets]=useState<{actions:{action:string;count:number}[];entityTypes:{entityType:string;count:number}[]}>({actions:[],entityTypes:[]})
+  const [summary,setSummary]=useState<any>(null)
+  const [businessDate,setBusinessDate]=useState('')
   const [openId,setOpenId]=useState<string|null>(null)
+  const [copiedId,setCopiedId]=useState<string|null>(null)
   const ticket=useRef(0)
 
-  const load=async()=>{
-    const current=++ticket.current
-    setLoading(true); setError('')
+  useEffect(()=>{const timer=window.setTimeout(()=>setQuery(search.trim()),300); return ()=>window.clearTimeout(timer)},[search])
+
+  const filterParams=useMemo(()=>{
     const params=new URLSearchParams()
-    if(action!=='all') params.set('action',action)
-    const from=auditWindow(period)
-    if(from) params.set('from',from)
+    if(period==='custom'){if(customFrom)params.set('from',customFrom); if(customTo)params.set('to',customTo)}
+    else if(period!=='all')params.set('period',period)
+    if(action!=='all')params.set('action',action)
+    if(entityType)params.set('entityType',entityType)
+    if(query)params.set('q',query)
+    return params
+  },[period,customFrom,customTo,action,entityType,query])
+
+  const rangeInvalid=period==='custom'&&Boolean(customFrom&&customTo&&customFrom>customTo)
+
+  const load=async(mode:'replace'|'append')=>{
+    if(rangeInvalid)return
+    const current=++ticket.current
+    const nextOffset=mode==='append'?offset:0
+    if(mode==='append')setLoadingMore(true); else setLoading(true)
+    setError('')
     try{
+      const params=new URLSearchParams(filterParams)
+      params.set('offset',String(nextOffset))
       const response=await fetch(`/api/audit?${params.toString()}`,{cache:'no-store'})
       const data=await response.json().catch(()=>null)
-      if(current!==ticket.current) return
-      if(!response.ok){ setEvents([]); setTotal(0); setError(data?.error??`Could not load the audit log (${response.status}).`); return }
-      setEvents(Array.isArray(data?.events)?data.events:[]); setTotal(Number(data?.total??0)); setLimit(Number(data?.limit??100)); setHasMore(Boolean(data?.hasMore))
+      if(current!==ticket.current)return
+      if(!response.ok){
+        if(mode==='replace'){setEvents([]); setTotal(0); setHasMore(false)}
+        setError(data?.error??`Could not load the audit log (${response.status}).`); return
+      }
+      const incoming=Array.isArray(data?.events)?data.events:[]
+      setEvents(currentEvents=>mode==='append'?[...currentEvents,...incoming]:incoming)
+      setTotal(Number(data?.total??0)); setOffset(nextOffset+incoming.length); setHasMore(Boolean(data?.hasMore))
+      setFacets({actions:Array.isArray(data?.facets?.actions)?data.facets.actions:[],entityTypes:Array.isArray(data?.facets?.entityTypes)?data.facets.entityTypes:[]})
+      setSummary(data?.summary??null)
+      if(data?.businessDate)setBusinessDate(String(data.businessDate))
     }catch{
-      if(current!==ticket.current) return
-      setEvents([]); setTotal(0); setError('Could not reach the server. Check your connection and try again.')
+      if(current!==ticket.current)return
+      if(mode==='replace'){setEvents([]); setTotal(0); setHasMore(false)}
+      setError('Could not reach the server. Check your connection and try again.')
     }finally{
-      if(current===ticket.current) setLoading(false)
+      if(current===ticket.current){setLoading(false); setLoadingMore(false)}
     }
   }
-  useEffect(()=>{void load()},[period,action])
 
-  const visible=useMemo(()=>{const search=query.trim().toLowerCase(); if(!search) return events; return events.filter(event=>[event.recordLabel,event.reason,event.userName,event.action,event.entityType].filter(Boolean).join(' ').toLowerCase().includes(search))},[events,query])
+  useEffect(()=>{setOpenId(null); void load('replace')},[filterParams,rangeInvalid])
 
-  return <TablePage title="Audit log" sub="Permanent record of voids, discounts, price changes, settlements, and approvals." action={<button onClick={()=>void load()} className="rounded-md border border-[#d8dee4] bg-white px-4 py-2 text-sm font-bold text-[#1f2328] hover:bg-[#f6f8fa]">Refresh</button>}>
-    <div className="flex flex-col gap-3 border-b border-[#eaeef2] p-4 md:flex-row md:items-center">
-      <select value={period} onChange={event=>setPeriod(event.target.value)} aria-label="Period" className="rounded-md border border-[#d8dee4] bg-white px-3 py-2 text-sm font-semibold text-[#1f2328]"><option value="today">Today</option><option value="7d">Last 7 days</option><option value="30d">Last 30 days</option><option value="all">All time</option></select>
-      <select value={action} onChange={event=>setAction(event.target.value)} aria-label="Action" className="rounded-md border border-[#d8dee4] bg-white px-3 py-2 text-sm font-semibold text-[#1f2328]">{AUDIT_ACTIONS.map(([value,label])=><option key={value} value={value}>{label}</option>)}</select>
-      <div className="relative flex-1"><Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-[#8c959f]"/><input value={query} onChange={event=>setQuery(event.target.value)} placeholder="Filter by record, user, or reason" className="w-full rounded-md border border-[#d8dee4] bg-white py-2 pl-9 pr-3 text-sm"/></div>
+  const exportView=()=>{const params=new URLSearchParams(filterParams); params.set('format','csv'); window.location.assign(`/api/audit?${params.toString()}`)}
+  const copyId=async(value:string)=>{try{await navigator.clipboard.writeText(value); setCopiedId(value); window.setTimeout(()=>setCopiedId(current=>current===value?null:current),1600)}catch{setCopiedId(null)}}
+
+  const actionOptions=useMemo(()=>{
+    const list=[...facets.actions]
+    if(action!=='all'&&!list.some(option=>option.action===action))list.push({action,count:0})
+    return list.length?list:Object.keys(AUDIT_ACTION_META).map(key=>({action:key,count:0}))
+  },[facets.actions,action])
+  const entityOptions=useMemo(()=>{
+    const list=[...facets.entityTypes]
+    if(entityType&&!list.some(option=>option.entityType===entityType))list.push({entityType,count:0})
+    return list
+  },[facets.entityTypes,entityType])
+  const hasFilters=Boolean(query||action!=='all'||entityType)
+
+  return <TablePage title="Audit log" sub="Permanent record of voids, discounts, price changes, settlements, and approvals." action={<div className="flex gap-2"><button type="button" onClick={exportView} className="inline-flex items-center gap-2 rounded-md border border-[#d8dee4] bg-white px-3 py-2 text-sm font-bold text-[#1f2328] hover:bg-[#f6f8fa]"><Download className="size-4"/>Export</button><button type="button" onClick={()=>void load('replace')} disabled={loading} className="rounded-md border border-[#d8dee4] bg-white px-4 py-2 text-sm font-bold text-[#1f2328] hover:bg-[#f6f8fa] disabled:opacity-40">Refresh</button></div>}>
+    <div className="flex flex-col gap-3 border-b border-[#eaeef2] p-4">
+      <div className="flex flex-col gap-2 md:flex-row md:items-center">
+        <select value={period} onChange={event=>{setPeriod(event.target.value); setError('')}} aria-label="Period" className="rounded-md border border-[#d8dee4] bg-white px-3 py-2 text-sm font-semibold text-[#1f2328]"><option value="today">Today</option><option value="7d">Last 7 days</option><option value="30d">Last 30 days</option><option value="all">All time</option><option value="custom">Custom range</option></select>
+        <select value={action} onChange={event=>setAction(event.target.value)} aria-label="Action" className="rounded-md border border-[#d8dee4] bg-white px-3 py-2 text-sm font-semibold text-[#1f2328]"><option value="all">All actions{summary?.total?` (${summary.total})`:''}</option>{actionOptions.map(option=><option key={option.action} value={option.action}>{auditActionMeta(option.action).label}{option.count?` (${option.count})`:''}</option>)}</select>
+        <select value={entityType} onChange={event=>setEntityType(event.target.value)} aria-label="Record type" className="rounded-md border border-[#d8dee4] bg-white px-3 py-2 text-sm font-semibold text-[#1f2328]"><option value="">All records</option>{entityOptions.map(option=><option key={option.entityType} value={option.entityType}>{auditEntityLabel(option.entityType)}{option.count?` (${option.count})`:''}</option>)}</select>
+        <div className="relative min-w-[180px] flex-1"><Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-[#8c959f]"/><input value={search} onChange={event=>setSearch(event.target.value)} placeholder="Search record, reason, user, or details" className="w-full rounded-md border border-[#d8dee4] bg-white py-2 pl-9 pr-3 text-sm"/></div>
+      </div>
+      {period==='custom'&&<div className="flex flex-wrap items-end gap-3">
+        <label className="block text-[10px] font-bold uppercase tracking-wide text-[#57606a]">From<input type="date" value={customFrom} max={customTo||undefined} onChange={event=>setCustomFrom(event.target.value)} className="mt-1 block rounded-md border border-[#d8dee4] bg-white px-3 py-1.5 text-sm font-semibold text-[#1f2328]"/></label>
+        <label className="block text-[10px] font-bold uppercase tracking-wide text-[#57606a]">To<input type="date" value={customTo} min={customFrom||undefined} onChange={event=>setCustomTo(event.target.value)} className="mt-1 block rounded-md border border-[#d8dee4] bg-white px-3 py-1.5 text-sm font-semibold text-[#1f2328]"/></label>
+        {rangeInvalid?<p className="pb-1 text-[11px] font-semibold text-[#cf222e]">The start date is after the end date.</p>:<p className="pb-1 text-[11px] text-[#57606a]">Blank dates include everything. Days follow the bar's clock.</p>}
+      </div>}
     </div>
-    {error&&<div role="alert" className="m-4 flex flex-wrap items-center justify-between gap-3 rounded-md border border-[#ffcecb] bg-[#ffebe9] px-4 py-3 text-sm font-semibold text-[#cf222e]"><span>{error}</span><button onClick={()=>void load()} className="rounded-lg bg-white px-3 py-1.5 text-xs font-bold">Retry</button></div>}
+    {summary&&<div className="grid grid-cols-2 gap-px border-b border-[#eaeef2] bg-[#eaeef2] sm:grid-cols-5" title="Totals for the selected date range, before action or search filters.">
+      {[{label:'Events',value:summary.total,detail:''},{label:'Voids',value:summary.voids,detail:''},{label:'Discounts',value:summary.discounts,detail:money(summary.discountAmount)},{label:'Day closes',value:summary.closes,detail:''},{label:'Admin actions',value:summary.adminActions,detail:''}].map(cell=><div key={cell.label} className="bg-white px-4 py-3"><p className="text-[10px] font-bold uppercase tracking-wide text-[#57606a]">{cell.label}</p><p className="mt-1 text-lg font-semibold leading-tight">{Number(cell.value??0).toLocaleString('en-US')}</p>{cell.detail&&<p className="text-[11px] text-[#57606a]">{cell.detail}</p>}</div>)}
+    </div>}
+    {error&&<div role="alert" className="m-4 flex flex-wrap items-center justify-between gap-3 rounded-md border border-[#ffcecb] bg-[#ffebe9] px-4 py-3 text-sm font-semibold text-[#cf222e]"><span>{error}</span><button onClick={()=>void load('replace')} className="rounded-lg bg-white px-3 py-1.5 text-xs font-bold">Retry</button></div>}
     <div className="overflow-x-auto">
       <table className="w-full min-w-[820px] text-left text-sm">
         <thead className="bg-[#f6f8fa] text-xs uppercase text-[#57606a]"><tr><th className="p-4">Time</th><th>User</th><th>Action</th><th>Record</th><th>Approval</th><th className="w-10"/></tr></thead>
         <tbody>
           {loading?<tr><td colSpan={6} className="p-10 text-center text-sm text-[#57606a]">Loading events…</td></tr>
-          :!visible.length?<tr><td colSpan={6} className="p-10 text-center"><p className="font-bold">{events.length?'No events match this filter':'No audit events yet'}</p><p className="mx-auto mt-1 max-w-md text-sm text-[#57606a]">{events.length?'Try a wider period or a different action.':'Voids, discounts, price changes, settlements, and approvals appear here as they happen.'}</p></td></tr>
-          :visible.map(event=><Fragment key={event.id}>
-            <tr onClick={()=>setOpenId(current=>current===event.id?null:event.id)} className="cursor-pointer border-t border-[#eaeef2] hover:bg-[#f6f8fa]">
-              <td className="p-4 text-[#57606a]">{new Date(event.createdAt).toLocaleString([], {day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})}</td>
-              <td><b>{event.userName??'Unknown'}</b><span className="block text-[11px] font-semibold text-[#57606a]">{event.actorRole??event.userRole??''}</span></td>
-              <td><span className={`rounded-full px-2 py-1 text-[10px] font-bold uppercase ${auditActionTone(event.action)}`}>{auditActionLabel(event.action)}</span></td>
-              <td className="pr-4">{event.recordLabel||'—'}<span className="block text-[11px] text-[#57606a]">{event.entityType??''}</span></td>
-              <td><span className={`rounded-full px-2 py-1 text-[10px] font-bold ${auditApprovalTone(event.approval)}`}>{event.approval}</span></td>
-              <td className="pr-4 text-[#8c959f]"><ChevronDown className={`size-4 transition-transform ${openId===event.id?'rotate-180':''}`}/></td>
-            </tr>
-            {openId===event.id&&<tr className="border-t border-[#eaeef2] bg-[#f6f8fa]"><td colSpan={6} className="px-4 py-4 text-xs text-[#57606a]">
-              <div className="grid gap-3 md:grid-cols-2">
-                <div><p className="text-[10px] font-bold uppercase tracking-wide text-[#57606a]">Reason</p><p className="mt-1">{event.reason||'None recorded'}</p></div>
-                <div><p className="text-[10px] font-bold uppercase tracking-wide text-[#57606a]">Entity</p><p className="mt-1 break-all">{event.entityId||'—'}</p></div>
-              </div>
-              {event.metadata&&Object.keys(event.metadata).length>0&&<div className="mt-3"><p className="text-[10px] font-bold uppercase tracking-wide text-[#57606a]">Details</p><dl className="mt-1 flex flex-wrap gap-x-5 gap-y-1">{Object.entries(event.metadata).map(([key,value])=><div key={key} className="flex gap-1"><dt className="font-semibold">{key}:</dt><dd>{typeof value==='object'?JSON.stringify(value):String(value)}</dd></div>)}</dl></div>}
-            </td></tr>}
-          </Fragment>)}
+          :!events.length?<tr><td colSpan={6} className="p-10 text-center"><p className="font-bold">{hasFilters?'No events match this filter':'No audit events yet'}</p><p className="mx-auto mt-1 max-w-md text-sm text-[#57606a]">{hasFilters?'Try a wider period, another action, or clear the search.':"Voids, discounts, price changes, settlements, and approvals appear here as they happen."}</p></td></tr>
+          :events.map((event,index)=>{
+            const actionMeta=auditActionMeta(event.action)
+            const approvalMeta=auditApprovalMeta(event.approval)
+            const metadata=event.metadata&&typeof event.metadata==='object'?event.metadata as Record<string,unknown>:{}
+            const diff=auditDiff(metadata)
+            const detailEntries=Object.entries(metadata).filter(([key])=>!diff||(key!==diff.keys[0]&&key!==diff.keys[1]))
+            const showDay=index===0||auditDayKey(events[index-1].createdAt)!==auditDayKey(event.createdAt)
+            return <Fragment key={event.id}>
+              {showDay&&<tr className="border-t border-[#eaeef2] bg-[#f6f8fa]"><td colSpan={6} className="px-4 py-1.5 text-[10px] font-bold uppercase tracking-wide text-[#57606a]">{auditDayLabel(event.createdAt)}</td></tr>}
+              <tr onClick={()=>setOpenId(current=>current===event.id?null:event.id)} className="cursor-pointer border-t border-[#eaeef2] hover:bg-[#f6f8fa]">
+                <td className="p-4 align-top text-[#57606a]"><span className="block font-semibold text-[#1f2328]" title={new Date(event.createdAt).toLocaleString()}>{auditRelative(event.createdAt)}</span><span className="block text-[11px]">{new Date(event.createdAt).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</span></td>
+                <td className="align-top"><b>{event.userName??'Unknown'}</b><span className="block text-[11px] font-semibold text-[#57606a]">{event.actorRole??event.userRole??''}</span></td>
+                <td className="align-top"><span className={`rounded-full px-2 py-1 text-[10px] font-bold uppercase ${actionMeta.tone}`}>{actionMeta.label}</span></td>
+                <td className="pr-4 align-top"><span className="font-semibold">{event.recordLabel||'—'}</span><span className="block text-[11px] text-[#57606a]">{event.entityType?auditEntityLabel(event.entityType):''}</span></td>
+                <td className="align-top"><span title={approvalMeta.hint} className={`rounded-full px-2 py-1 text-[10px] font-bold ${approvalMeta.tone}`}>{approvalMeta.label}</span></td>
+                <td className="pr-4 align-top text-[#8c959f]"><ChevronDown className={`size-4 transition-transform ${openId===event.id?'rotate-180':''}`}/></td>
+              </tr>
+              {openId===event.id&&<tr className="border-t border-[#eaeef2] bg-[#f6f8fa]"><td colSpan={6} className="px-4 py-4 text-xs text-[#57606a]">
+                <div className="grid gap-3 md:grid-cols-2">
+                  <div><p className="text-[10px] font-bold uppercase tracking-wide text-[#57606a]">Reason</p><p className="mt-1 text-[#1f2328]">{event.reason||'None recorded'}</p></div>
+                  <div><p className="text-[10px] font-bold uppercase tracking-wide text-[#57606a]">Record id</p><div className="mt-1 flex items-center gap-2"><code className="break-all rounded bg-white px-2 py-1 text-[11px]">{event.entityId||'—'}</code>{event.entityId&&<button type="button" onClick={()=>void copyId(event.entityId)} className="shrink-0 rounded border border-[#d0d7de] bg-white px-2 py-1 text-[10px] font-bold text-[#1f2328] hover:bg-[#f6f8fa]">{copiedId===event.entityId?'Copied':'Copy'}</button>}</div></div>
+                </div>
+                {diff&&<div className="mt-3 rounded-md border border-[#d0d7de] bg-white px-3 py-2"><p className="text-[10px] font-bold uppercase tracking-wide text-[#57606a]">Change</p><p className="mt-1 text-sm font-semibold text-[#1f2328]">{auditValue(diff.before)} <span className="text-[#8c959f]">→</span> {auditValue(diff.after)}</p></div>}
+                {detailEntries.length>0&&<div className="mt-3"><p className="text-[10px] font-bold uppercase tracking-wide text-[#57606a]">Details</p><dl className="mt-1 flex flex-wrap gap-x-5 gap-y-1">{detailEntries.map(([key,value])=><div key={key} className="flex gap-1"><dt className="font-semibold">{key}:</dt><dd className="break-all text-[#1f2328]">{auditValue(value)}</dd></div>)}</dl></div>}
+              </td></tr>}
+            </Fragment>
+          })}
         </tbody>
       </table>
     </div>
     <div className="flex flex-wrap items-center justify-between gap-2 border-t border-[#eaeef2] px-4 py-3 text-xs text-[#57606a]">
-      <span>{loading?'Loading…':`Showing ${visible.length} of ${total} event${total===1?'':'s'}${query.trim()?` (filtered from ${events.length} loaded)`:''}`}</span>
-      {hasMore&&<span>Latest {limit} shown. Narrow the period to see older events.</span>}
+      <span>{loading?'Loading…':`Showing ${events.length} of ${total} event${total===1?'':'s'}${hasFilters?' (filtered)':''}`}</span>
+      <div className="flex items-center gap-3">
+        {businessDate&&<span className="hidden sm:inline">Business date {businessDate}</span>}
+        {hasMore&&<button type="button" onClick={()=>void load('append')} disabled={loadingMore} className="inline-flex items-center gap-1.5 rounded-md border border-[#d0d7de] bg-white px-3 py-1.5 text-[11px] font-bold text-[#1f2328] hover:bg-[#f6f8fa] disabled:opacity-40">{loadingMore?<Loader2 className="size-3.5 animate-spin"/>:null}{loadingMore?'Loading…':'Load older events'}</button>}
+      </div>
     </div>
   </TablePage>
 }
