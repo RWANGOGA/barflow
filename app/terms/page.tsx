@@ -59,38 +59,37 @@ const sections: { title: string; body: React.ReactNode }[] = [
 export const metadata = { title: 'Terms of use · Bar management' }
 
 export default function TermsPage() {
-  return <main className="min-h-screen bg-[#f6f8fa] px-4 py-10 text-[#1f2328]">
-    <div className="mx-auto w-full max-w-3xl">
-      <Link href="/sign-up" className="inline-flex items-center gap-2 text-sm font-semibold text-[#57606a] hover:text-[#1f2328]">
-        <span className="flex size-7 items-center justify-center rounded-md bg-[#1f883d] text-white"><Wine className="size-4"/></span>
-        Bar management
+  return <main className="min-h-screen bg-canvas px-5 py-12 text-ink">
+    <div className="mx-auto w-full max-w-2xl">
+      <Link href="/sign-up" className="flex items-center justify-center gap-2.5 text-ink-muted transition hover:text-ink">
+        <span className="flex size-7 items-center justify-center rounded-[7px] bg-ink text-white"><Wine className="size-3.5"/></span>
+        <span className="display text-[14px] text-ink">Barflow</span>
       </Link>
 
-      <article className="mt-6 rounded-lg border border-[#d0d7de] bg-white p-6 shadow-[0_1px_0_rgba(27,31,36,.04)] sm:p-8">
-        <p className="text-xs font-semibold uppercase tracking-[.06em] text-[#57606a]">Legal</p>
-        <h1 className="mt-1 text-2xl font-semibold tracking-tight">Terms of use</h1>
-        <p className="mt-1 text-sm text-[#57606a]">Version {TERMS_VERSION} · updated {TERMS_UPDATED_AT}</p>
-
-        <p className="mt-6 text-sm leading-relaxed text-[#1f2328]">
+      <header className="mt-12 text-center">
+        <p className="eyebrow justify-center">Legal · version {TERMS_VERSION}</p>
+        <h1 className="display mt-4 text-[36px] text-balance sm:text-[44px]">Terms of use</h1>
+        <p className="mt-4 text-[10px] font-semibold uppercase tracking-[0.16em] text-ink-soft">Updated {TERMS_UPDATED_AT}</p>
+        <p className="mx-auto mt-6 max-w-lg text-[13px] leading-relaxed text-ink-muted">
           These terms cover the use of this bar management service by a bar, its owner and its staff.
           By creating an account or accepting an invitation you agree to them.
         </p>
+      </header>
 
-        <div className="mt-6 flex flex-col gap-6">
-          {sections.map((section) => <section key={section.title}>
-            <h2 className="text-sm font-semibold">{section.title}</h2>
-            <p className="mt-1.5 text-sm leading-relaxed text-[#57606a]">{section.body}</p>
-          </section>)}
-        </div>
+      <div className="mt-12 border-t border-line">
+        {sections.map((section) => <section key={section.title} className="border-b border-line py-6">
+          <h2 className="text-[15px] font-medium tracking-tight">{section.title}</h2>
+          <p className="mt-2 text-[13px] leading-relaxed text-ink-muted">{section.body}</p>
+        </section>)}
+      </div>
 
-        <div className="mt-8 rounded-md border border-[#d0d7de] bg-[#f6f8fa] p-4 text-sm">
-          <p className="font-semibold">Questions about these terms?</p>
-          <p className="mt-1 text-[#57606a]">Speak to the owner of your bar, who controls the workspace and its data.</p>
-        </div>
-      </article>
+      <div className="mt-8 border-l-2 border-line pl-4">
+        <p className="micro">Questions</p>
+        <p className="mt-2 text-[13px] leading-relaxed text-ink-muted">Speak to the owner of your bar, who controls the workspace and its data.</p>
+      </div>
 
-      <p className="mt-4 text-center text-xs text-[#57606a]">
-        <Link href="/sign-up" className="font-semibold text-[#0969da] hover:underline">Back to sign up</Link>
+      <p className="mt-12 text-center text-[12px] text-ink-muted">
+        <Link href="/sign-up" className="font-medium text-ink underline decoration-line-strong underline-offset-4 transition hover:decoration-ink">Back to sign up</Link>
       </p>
     </div>
   </main>

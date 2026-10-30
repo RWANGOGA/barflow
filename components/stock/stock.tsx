@@ -15,10 +15,10 @@ export const money=(n:number)=>formatMoney(n,readCachedRegional())
 type StockView = 'stock' | 'counts' | 'movements' | 'wastage' | 'deliveries'
 type StockFormKind = 'delivery' | 'wastage' | 'count'
 
-function Shell({eyebrow,title,sub,children,action}:{eyebrow:string;title:string;sub:string;children:any;action?:React.ReactNode}){return <div className="mx-auto w-full max-w-[1200px]"><header className="mb-6 flex flex-col gap-3 border-b border-[#d8dee4] pb-4 sm:flex-row sm:items-end sm:justify-between"><div><p className="text-xs font-semibold text-[#57606a]">{eyebrow}</p><h2 className="mt-1 text-2xl font-semibold tracking-tight text-[#1f2328]">{title}</h2><p className="mt-1 max-w-2xl text-sm text-[#57606a]">{sub}</p></div>{action&&<div className="flex shrink-0 flex-wrap gap-2">{action}</div>}</header>{children}</div>}
-const Card=({children,className=''}:{children:any;className?:string})=><div className={`rounded-lg border border-[#d0d7de] bg-white p-5 shadow-[0_1px_0_rgba(27,31,36,.04)] ${className}`}>{children}</div>
+function Shell({eyebrow,title,sub,children,action}:{eyebrow:string;title:string;sub:string;children:any;action?:React.ReactNode}){return <div className="mx-auto w-full max-w-[1180px]"><header className="border-b border-line pb-8 text-center md:pb-10"><p className="eyebrow justify-center">{eyebrow}</p><h2 className="display mx-auto mt-4 max-w-3xl text-balance text-[34px] text-ink sm:text-[44px] lg:text-[52px]">{title}</h2><p className="mx-auto mt-4 max-w-xl text-[13px] leading-relaxed text-ink-muted sm:text-sm">{sub}</p>{action&&<div className="mt-7 flex flex-wrap items-center justify-center gap-2">{action}</div>}</header><div className="pt-6 md:pt-8">{children}</div></div>}
+const Card=({children,className=''}:{children:any;className?:string})=><section className={`border-t border-line pt-6 ${className}`}>{children}</section>
 
-function TablePage({title,sub,children,action}:{title:string;sub:string;children:any;action?:React.ReactNode}){return <Shell eyebrow="Manager workspace" title={title} sub={sub} action={action}><Card className="overflow-hidden p-0">{children}</Card></Shell>}
+function TablePage({title,sub,children,action,eyebrow='Stock control'}:{title:string;sub:string;children:any;action?:React.ReactNode;eyebrow?:string}){return <Shell eyebrow={eyebrow} title={title} sub={sub} action={action}>{children}</Shell>}
 
 const formatWhen = (value: unknown) => {
   const d = new Date(String(value ?? ''))
@@ -45,7 +45,7 @@ export function Stock({ toast, role = 'Manager', products: stockItems = [], onSt
   const [query, setQuery] = useState('')
   const [lowOnly, setLowOnly] = useState(false)
   const latestRequest = useRef(0)
-  const canManage = role === 'Admin' || role === 'Manager' || role === 'Storekeeper'
+  const canManage = role === 'Owner' || role === 'Admin' || role === 'Manager' || role === 'Storekeeper'
   const nameOf = (id: string) => stockItems.find((p: Product) => p.id === id)?.name ?? id
 
   const loadView = async (next: StockView, productId?: string) => {
@@ -90,9 +90,9 @@ export function Stock({ toast, role = 'Manager', products: stockItems = [], onSt
       sub="Track live stock, deliveries, wastage, and physical counts."
       action={canManage && (
         <>
-          <button onClick={() => openForm('delivery')} className="rounded-md bg-[#1f883d] px-4 py-3 text-sm font-bold text-white"><Truck className="mr-2 inline size-4" />Record delivery</button>
-          <button onClick={() => openForm('wastage')} className="rounded-md border border-[#cf222e] px-4 py-3 text-sm font-bold text-red-600">Record wastage</button>
-          <button onClick={() => openForm('count')} className="rounded-md border border-[#d0d7de] px-4 py-3 text-sm font-bold">Stock count</button>
+          <button onClick={() => openForm('delivery')} className="inline-flex items-center gap-1.5 rounded-[8px] bg-ink px-4 py-2 text-[12px] font-medium text-white transition hover:bg-black"><Truck className="size-3.5" />Record delivery</button>
+          <button onClick={() => openForm('wastage')} className="rounded-[8px] border border-line-strong px-4 py-2 text-[12px] font-medium text-ink-muted transition hover:border-alert hover:text-alert">Record wastage</button>
+          <button onClick={() => openForm('count')} className="rounded-[8px] border border-line-strong px-4 py-2 text-[12px] font-medium text-ink-muted transition hover:border-ink hover:text-ink">Stock count</button>
         </>
       )}
     >
@@ -100,64 +100,64 @@ export function Stock({ toast, role = 'Manager', products: stockItems = [], onSt
       {form === 'wastage' && <WastageForm {...formProps} />}
       {form === 'count' && <CountSheet {...formProps} />}
 
-      <div className="flex flex-wrap gap-2 border-b border-[#eaeef2] p-5">
+      <div className="mt-2 flex items-center gap-6 overflow-x-auto border-b border-line">
         {tabs.map((t) => (
-          <button key={t.key} onClick={() => loadView(t.key)} className={`rounded-md border px-4 py-2 text-xs font-bold ${view === t.key ? 'bg-[#1f883d] text-white' : ''}`}>{t.label}</button>
+          <button key={t.key} onClick={() => loadView(t.key)} className={`-mb-px shrink-0 border-b-2 pb-3 text-[12px] transition ${view === t.key ? 'border-ink font-medium text-ink' : 'border-transparent text-ink-muted hover:text-ink'}`}>{t.label}</button>
         ))}
       </div>
 
       {view === 'stock' ? (
         <>
-          <div className="flex flex-wrap items-center gap-3 border-b border-[#eaeef2] p-4">
-            <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search items…" className="w-56 rounded-md border border-[#d0d7de] px-3 py-2 text-sm" />
-            <button onClick={() => setLowOnly((v) => !v)} className={`rounded-md border px-3 py-2 text-xs font-bold ${lowOnly ? 'bg-[#fff8c5] text-[#9a6700]' : ''}`}>Low stock ({lowCount})</button>
-            <span className="ml-auto text-xs font-bold text-[#57606a]">Stock value at cost: {money(stockValue)}</span>
+          <div className="flex flex-wrap items-center gap-3 border-b border-line py-4">
+            <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search items…" className="field w-56" />
+            <button onClick={() => setLowOnly((v) => !v)} className={`text-[12px] font-medium transition ${lowOnly ? 'text-warn' : 'text-ink-muted hover:text-ink'}`}>{lowOnly ? 'Showing low stock' : 'Low stock'} ({lowCount})</button>
+            <span className="ml-auto text-[11px] text-ink-muted">Stock value at cost <b className="ml-1 font-medium tabular-nums text-ink">{money(stockValue)}</b></span>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full min-w-[680px] text-left text-sm">
-              <thead className="bg-[#f6f8fa] text-xs uppercase tracking-wider text-[#57606a]">
-                <tr><th className="p-4">Item</th><th>Unit</th><th>On hand</th><th>Reorder at</th><th>Status</th><th></th></tr>
+              <thead className="bg-transparent text-[9px] font-semibold uppercase tracking-[0.16em] text-ink-muted">
+                <tr className="border-b border-line"><th className="px-3 pb-2 font-semibold">Item</th><th className="px-3 pb-2 font-semibold">Unit</th><th className="px-3 pb-2 text-right font-semibold">On hand</th><th className="px-3 pb-2 text-right font-semibold">Reorder at</th><th className="px-3 pb-2 font-semibold">Status</th><th className="px-3 pb-2"></th></tr>
               </thead>
               <tbody>
                 {visible.map((p: Product) => (
-                  <tr key={p.id} className="border-t border-[#eaeef2]">
-                    <td className="p-4 font-bold">{p.name}<span className="ml-2 text-xs font-normal text-[#57606a]">{p.category}</span></td>
-                    <td>{p.unit}</td>
-                    <td className="font-bold">{p.stock}</td>
-                    <td>{p.reorder}</td>
-                    <td><span className={`rounded-full px-2 py-1 text-[10px] font-bold ${p.stock <= p.reorder ? 'bg-[#fff8c5] text-[#9a6700]' : 'bg-[#dafbe1] text-[#1a7f37]'}`}>{p.stock <= p.reorder ? 'LOW STOCK' : 'IN STOCK'}</span></td>
-                    <td>
-                      <div className="flex items-center gap-2">
-                        {canManage && <button onClick={() => openForm('delivery', p.id)} className="rounded-lg bg-[#dafbe1] px-3 py-2 text-[10px] font-bold text-[#1a7f37]">Receive</button>}
-                        <button onClick={() => loadView('movements', p.id)} aria-label={`Open ${p.name} movement history`}><ChevronDown className="size-4" /></button>
+                  <tr key={p.id} className="border-b border-line transition last:border-0 hover:bg-sunk/60">
+                    <td className="px-3 py-3.5 font-medium">{p.name}<span className="ml-2 text-[11px] font-normal text-ink-muted">{p.category}</span></td>
+                    <td className="px-3 py-3.5 text-[13px] text-ink-muted">{p.unit}</td>
+                    <td className="px-3 py-3.5 text-right font-medium tabular-nums">{p.stock}</td>
+                    <td className="px-3 py-3.5 text-right tabular-nums text-ink-muted">{p.reorder}</td>
+                    <td className="px-3 py-3.5"><span className={`text-[11px] font-medium uppercase tracking-wide ${p.stock <= p.reorder ? 'text-warn' : 'text-ink-muted'}`}>{p.stock <= p.reorder ? 'Low stock' : 'In stock'}</span></td>
+                    <td className="px-3 py-3.5">
+                      <div className="flex items-center justify-end gap-3">
+                        {canManage && <button onClick={() => openForm('delivery', p.id)} className="text-[11px] font-medium text-ink underline-offset-4 transition hover:underline">Receive</button>}
+                        <button onClick={() => loadView('movements', p.id)} aria-label={`Open ${p.name} movement history`} className="rounded-[6px] p-1 text-ink-soft transition hover:text-ink"><ChevronDown className="size-4" /></button>
                       </div>
                     </td>
                   </tr>
                 ))}
-                {visible.length === 0 && <tr><td colSpan={6} className="p-6 text-center text-sm text-[#57606a]">No items match.</td></tr>}
+                {visible.length === 0 && <tr><td colSpan={6} className="px-4 py-12 text-center"><p className="text-[13px] font-medium text-ink-muted">{stockItems.length === 0 ? 'No stock items yet' : 'No items match'}</p><p className="mx-auto mt-1 max-w-sm text-[12px] leading-relaxed text-ink-soft">{stockItems.length === 0 ? 'Add your bottles and ingredients under Menu & prices. Deliveries, counts and wastage are recorded here against them.' : 'Try another name, or clear the search to see every item.'}</p></td></tr>}
               </tbody>
             </table>
           </div>
         </>
       ) : (
-        <div className="p-5">
-          <div className="mb-3 flex items-center justify-between">
-            <h3 className="font-bold">
+        <div className="py-5">
+          <div className="mb-4 flex items-center justify-between gap-3">
+            <h3 className="text-[15px] font-semibold">
               {view === 'counts' ? 'Physical counts' : view === 'movements' ? (filterId ? `Movements: ${nameOf(filterId)}` : 'Movement history') : view === 'wastage' ? 'Wastage and adjustments' : 'Deliveries'}
             </h3>
-            {view === 'counts' && <span className="text-xs font-bold text-[#1a7f37]">Net variance: {signed(variance)}</span>}
-            {filterId && <button onClick={() => loadView('movements')} className="text-xs font-bold text-[#57606a]">Show all</button>}
+            {view === 'counts' && <span className="text-[11px] font-medium text-ink-muted">Net variance: {signed(variance)}</span>}
+            {filterId && <button onClick={() => loadView('movements')} className="text-[11px] font-medium text-ink-muted underline-offset-4 hover:underline">Show all</button>}
           </div>
-          {loading ? <p className="text-sm text-[#57606a]">Loading…</p> : report.length === 0 ? <p className="text-sm text-[#57606a]">No records found.</p> : (
-            <ul className="divide-y divide-[#eaeef2] rounded-md border border-[#d0d7de] bg-white">
+          {loading ? <p className="text-[13px] text-ink-muted">Loading…</p> : report.length === 0 ? <p className="text-[13px] text-ink-muted">No records found.</p> : (
+            <ul className="divide-y divide-line border-y border-line">
               {report.slice(0, 50).map((item: any, index: number) => {
                 const r = describeRecord(view, item, nameOf)
                 return (
-                  <li key={item.id ?? index} className="flex flex-wrap items-center gap-x-4 gap-y-1 p-3 text-sm">
-                    <b className="min-w-32">{r.name}</b>
+                  <li key={item.id ?? index} className="flex flex-wrap items-center gap-x-4 gap-y-1 py-3 text-[13px]">
+                    <b className="min-w-32 font-medium">{r.name}</b>
                     <span>{r.headline}</span>
-                    <span className="text-xs text-[#57606a]">{r.detail}</span>
-                    <span className="ml-auto text-xs text-[#57606a]">{formatWhen(r.when)}</span>
+                    <span className="text-[11px] text-ink-muted">{r.detail}</span>
+                    <span className="ml-auto text-[11px] text-ink-muted">{formatWhen(r.when)}</span>
                   </li>
                 )
               })}

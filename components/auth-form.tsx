@@ -2,13 +2,62 @@
 
 import { FormEvent, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Mail, ShieldCheck, Ticket, Wine } from 'lucide-react'
+import { ArrowRight, Mail, ShieldCheck, Ticket, Wine } from 'lucide-react'
 import { authClient } from '@/lib/auth-client'
 import { TERMS_VERSION } from '@/lib/terms'
 
-const field = 'mt-1.5 h-9 w-full rounded-md border border-[#d0d7de] bg-white px-3 text-sm outline-none transition focus:border-[#0969da] focus:ring-2 focus:ring-[#0969da]/20'
+const field =
+  'mt-2 h-11 w-full rounded-[8px] border border-line-strong bg-white px-3.5 text-sm text-ink outline-none transition placeholder:text-ink-soft focus:border-ink focus:ring-4 focus:ring-ink/[0.06]'
 
 type Onboarding = 'create' | 'join'
+
+const shift = [
+  ['01', 'Open the day', 'Count the float, unlock selling.'],
+  ['02', 'Serve the floor', 'Tabs, rounds and receipts.'],
+  ['03', 'Count the till', 'Cash variance and stock close.'],
+]
+
+/** The left-hand plate: the product promise, set like a hotel directory page. */
+function BrandPlate() {
+  return (
+    <aside className="relative hidden overflow-hidden bg-[#0b0c0e] px-12 py-12 text-white lg:flex lg:w-[46%] lg:flex-col xl:w-[48%]">
+      <div aria-hidden className="pointer-events-none absolute -right-28 -top-28 size-[430px] rounded-full border border-white/10" />
+      <div aria-hidden className="pointer-events-none absolute -bottom-36 -left-24 size-[400px] rounded-full border border-white/[0.07]" />
+      <div className="relative flex items-center gap-3">
+        <span className="flex size-10 items-center justify-center rounded-[8px] bg-white text-[#0b0c0e]">
+          <Wine className="size-5" />
+        </span>
+        <div>
+          <p className="display text-lg leading-none">Barflow</p>
+          <p className="mt-1.5 text-[9px] font-semibold uppercase tracking-[0.2em] text-white/40">Bar management</p>
+        </div>
+      </div>
+      <div className="relative mt-auto max-w-[430px]">
+        <p className="flex items-center gap-3 text-[9px] font-semibold uppercase tracking-[0.2em] text-white/40">
+          <span className="h-px w-8 bg-white/25" />
+          One shift, end to end
+        </p>
+        <h2 className="display mt-5 text-[46px] leading-[1.03]">The bar, in order.</h2>
+        <p className="mt-4 max-w-[380px] text-sm leading-relaxed text-white/70">
+          Take the order, keep the tab straight, watch the stock leave the shelf and count the till at close.
+          One system the whole team can read at a glance.
+        </p>
+        <ol className="mt-9">
+          {shift.map(([step, title, detail]) => (
+            <li key={step} className="flex items-baseline gap-4 border-t border-white/10 py-4">
+              <span className="font-mono text-[11px] tabular-nums text-white/40">{step}</span>
+              <span>
+                <b className="block text-sm font-semibold">{title}</b>
+                <span className="text-xs text-white/55">{detail}</span>
+              </span>
+            </li>
+          ))}
+        </ol>
+      </div>
+      <p className="relative mt-10 text-[11px] text-white/30">Built for the floor, not the back office.</p>
+    </aside>
+  )
+}
 
 export default function AuthForm({
   mode,
@@ -110,54 +159,132 @@ export default function AuthForm({
     router.refresh()
   }
 
-  return <main className="flex min-h-screen flex-col items-center justify-center bg-[#f6f8fa] p-4 text-[#1f2328]">
-    <div className="w-full max-w-[400px]">
-      <div className="mb-4 flex items-center justify-center gap-2">
-        <span className="flex size-8 items-center justify-center rounded-md bg-[#1f883d] text-white"><Wine className="size-4"/></span>
-        <span className="text-sm font-semibold">Bar management</span>
-      </div>
-      <div className="rounded-md border border-[#d0d7de] bg-white p-6 shadow-[0_1px_0_rgba(27,31,36,.04)]">
-        <h1 className="text-xl font-semibold tracking-tight">{isSignUp ? 'Create your account' : 'Sign in'}</h1>
-        <p className="mt-1 text-sm text-[#57606a]">{isSignUp ? 'Start a new bar, or join the team you were invited to.' : 'Sign in to manage today’s operation.'}</p>
+  const heading = !isSignUp ? 'Welcome back' : path === 'join' ? 'Join your team' : 'Start your bar'
+  const subheading = !isSignUp
+    ? 'Sign in to open the day and serve the floor.'
+    : path === 'join'
+      ? 'Create your account, then enter the code your manager sent you.'
+      : 'Create the workspace you will run the shifts from.'
 
-        {isSignUp && <div className="mt-4 grid grid-cols-2 gap-1 rounded-md border border-[#d0d7de] bg-[#f6f8fa] p-1">
-          <button type="button" onClick={() => { setPath('create'); setError('') }} className={`rounded-lg px-3 py-2 text-xs font-semibold ${path === 'create' ? 'bg-white text-[#1f2328] shadow-sm' : 'text-[#57606a]'}`}>Create a bar</button>
-          <button type="button" onClick={() => { setPath('join'); setError('') }} className={`rounded-lg px-3 py-2 text-xs font-semibold ${path === 'join' ? 'bg-white text-[#1f2328] shadow-sm' : 'text-[#57606a]'}`}>Join with a code</button>
-        </div>}
+  return (
+    <div className="flex min-h-screen bg-canvas text-ink">
+      <BrandPlate />
 
-        <form onSubmit={submit} className="mt-4 flex flex-col gap-4">
-          {isSignUp && path === 'create' && <div className="flex items-start gap-2 rounded-md border border-[#ddf4ff] bg-[#ddf4ff]/40 px-3 py-2 text-[11px] leading-relaxed text-[#0969da]">
-            <ShieldCheck className="mt-0.5 size-3.5 shrink-0"/>
-            <span>You will be the <b>Owner</b> of this bar. Add the rest of your team later from Team &amp; permissions.</span>
-          </div>}
-          {isSignUp && path === 'join' && <div className="flex items-start gap-2 rounded-md border border-[#ddf4ff] bg-[#ddf4ff]/40 px-3 py-2 text-[11px] leading-relaxed text-[#0969da]">
-            <Ticket className="mt-0.5 size-3.5 shrink-0"/>
-            <span>Your role is chosen by the person who invited you, so it is not selectable here.</span>
-          </div>}
+      <main className="flex min-h-screen w-full flex-col px-5 py-7 sm:px-10 lg:w-[54%] xl:w-[52%]">
+        <div className="flex items-center gap-2.5 lg:hidden">
+          <span className="flex size-8 items-center justify-center rounded-[8px] bg-ink text-white">
+            <Wine className="size-4" />
+          </span>
+          <span className="display text-sm">Barflow</span>
+        </div>
 
-          {isSignUp && <label className="block text-sm font-semibold">Full name<input required value={name} onChange={e=>setName(e.target.value)} autoComplete="name" className={field}/></label>}
-          {isSignUp && path === 'create' && <label className="block text-sm font-semibold">Bar or restaurant name<input required value={barName} onChange={e=>setBarName(e.target.value)} placeholder="e.g. The Sipper" className={field}/></label>}
-          <label className="block text-sm font-semibold">Email<input required type="email" autoComplete="email" value={email} onChange={e=>setEmail(e.target.value)} className={field}/></label>
-          <label className="block text-sm font-semibold">Password<input required minLength={8} type="password" autoComplete={isSignUp?'new-password':'current-password'} value={password} onChange={e=>setPassword(e.target.value)} className={field}/>{isSignUp&&<span className="mt-1 block text-[11px] font-normal text-[#57606a]">At least 8 characters.</span>}</label>
-          {isSignUp && path === 'join' && <label className="block text-sm font-semibold">Invitation code<input required value={code} onChange={e=>setCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g,'').slice(0,12))} autoComplete="one-time-code" placeholder="e.g. K7QM2XP4RD" className={`${field} font-mono tracking-[.18em]`}/></label>}
+        <div className="mx-auto flex w-full max-w-[404px] flex-1 flex-col justify-start py-8 lg:justify-center lg:py-10">
+          <p className="eyebrow justify-center">{isSignUp ? (path === 'join' ? 'Invitation' : 'New workspace') : 'Staff access'}</p>
+          <h1 className="display mt-4 text-center text-[34px] text-balance sm:text-[38px]">{heading}</h1>
+          <p className="mx-auto mt-3 max-w-[340px] text-center text-[13px] leading-relaxed text-ink-muted">{subheading}</p>
 
-          {isSignUp && <label className="flex items-start gap-2 text-[11px] leading-relaxed text-[#57606a]">
-            <input type="checkbox" checked={accepted} onChange={e=>setAccepted(e.target.checked)} className="mt-0.5 size-3.5 rounded border-[#d0d7de]"/>
-            <span>I accept the <a href="/terms" target="_blank" rel="noreferrer" className="font-semibold text-[#0969da] hover:underline">terms of use</a>, including manager approval of sensitive actions and the audit trail that records them.</span>
-          </label>}
+          {isSignUp && (
+            <div className="mt-8 grid grid-cols-2 border-b border-line">
+              <button
+                type="button"
+                onClick={() => { setPath('create'); setError('') }}
+                className={`-mb-px border-b-2 px-3 pb-2.5 text-[12px] font-medium transition ${path === 'create' ? 'border-ink text-ink' : 'border-transparent text-ink-muted hover:text-ink'}`}
+              >
+                Start a bar
+              </button>
+              <button
+                type="button"
+                onClick={() => { setPath('join'); setError('') }}
+                className={`-mb-px border-b-2 px-3 pb-2.5 text-[12px] font-medium transition ${path === 'join' ? 'border-ink text-ink' : 'border-transparent text-ink-muted hover:text-ink'}`}
+              >
+                Join with a code
+              </button>
+            </div>
+          )}
 
-          {error && <div role="alert" className="rounded-md border border-[#ffcecb] bg-[#ffebe9] px-3 py-2 text-xs font-semibold text-[#cf222e]">
-            <p>{error}</p>
-            {retryJoin && <a href={`/join?code=${encodeURIComponent(code)}`} className="mt-1 inline-flex items-center gap-1 font-semibold underline"><Mail className="size-3"/>Retry joining the bar</a>}
-          </div>}
+          <form onSubmit={submit} className="mt-6 flex flex-col gap-4">
+            {isSignUp && path === 'create' && (
+              <div className="flex items-start gap-2.5 border-l-2 border-line pl-3 text-[11px] leading-relaxed text-ink-muted">
+                <ShieldCheck className="mt-0.5 size-3.5 shrink-0 text-ink-soft" />
+                <span>You will be the <b className="font-medium text-ink">Owner</b> of this bar. Add the rest of your team later from Team &amp; permissions.</span>
+              </div>
+            )}
+            {isSignUp && path === 'join' && (
+              <div className="flex items-start gap-2.5 border-l-2 border-line pl-3 text-[11px] leading-relaxed text-ink-muted">
+                <Ticket className="mt-0.5 size-3.5 shrink-0 text-ink-soft" />
+                <span>Your role is chosen by the person who invited you, so it is not selectable here.</span>
+              </div>
+            )}
 
-          <button disabled={pending} className="mt-1 inline-flex h-9 items-center justify-center rounded-md bg-[#1f883d] text-sm font-semibold text-white transition hover:bg-[#1a7f37] disabled:cursor-not-allowed disabled:opacity-60">
-            {pending ? 'Please wait…' : !isSignUp ? 'Sign in' : path === 'join' ? 'Create account and join' : 'Create account'}
-          </button>
-        </form>
-      </div>
-      <p className="mt-4 rounded-md border border-[#d0d7de] bg-white px-4 py-3 text-center text-sm text-[#57606a]">{isSignUp ? 'Already have an account?' : 'Need an account?'} <a className="font-semibold text-[#0969da] hover:underline" href={isSignUp?'/sign-in':'/sign-up'}>{isSignUp?'Sign in':'Create one'}</a></p>
-      {!isSignUp && <p className="mt-2 text-center text-xs text-[#57606a]">Invited to a bar? <a href="/join" className="font-semibold text-[#0969da] hover:underline">Enter your code</a></p>}
+            {isSignUp && (
+              <label className="block text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-muted">
+                Full name
+                <input required value={name} onChange={e => setName(e.target.value)} autoComplete="name" className={field} placeholder="Grace Mwangi" />
+              </label>
+            )}
+            {isSignUp && path === 'create' && (
+              <label className="block text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-muted">
+                Bar or restaurant
+                <input required value={barName} onChange={e => setBarName(e.target.value)} placeholder="e.g. The Sipper" className={field} />
+              </label>
+            )}
+            <label className="block text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-muted">
+              Email
+              <input required type="email" autoComplete="email" value={email} onChange={e => setEmail(e.target.value)} className={field} placeholder="you@bar.com" />
+            </label>
+            <label className="block text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-muted">
+              Password
+              <input required minLength={8} type="password" autoComplete={isSignUp ? 'new-password' : 'current-password'} value={password} onChange={e => setPassword(e.target.value)} className={field} placeholder="At least 8 characters" />
+            </label>
+            {isSignUp && path === 'join' && (
+              <label className="block text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-muted">
+                Invitation code
+                <input required value={code} onChange={e => setCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 12))} autoComplete="one-time-code" placeholder="K7QM2XP4RD" className={`${field} font-mono tracking-[0.18em]`} />
+              </label>
+            )}
+
+            {isSignUp && (
+              <label className="flex items-start gap-2.5 text-[11px] leading-relaxed text-ink-muted">
+                <input type="checkbox" checked={accepted} onChange={e => setAccepted(e.target.checked)} className="mt-0.5 size-3.5 rounded border-line-strong accent-brand" />
+                <span>I accept the <a href="/terms" target="_blank" rel="noreferrer" className="font-semibold text-brand underline decoration-brand/30 underline-offset-2 hover:decoration-brand">terms of use</a>, including manager approval of sensitive actions and the audit trail that records them.</span>
+              </label>
+            )}
+
+            {error && (
+              <div role="alert" className="border-l-2 border-alert bg-alert-tint/70 px-3 py-2.5 text-[12px] font-medium text-alert">
+                <p>{error}</p>
+                {retryJoin && (
+                  <a href={`/join?code=${encodeURIComponent(code)}`} className="mt-1.5 inline-flex items-center gap-1 font-medium underline underline-offset-2">
+                    <Mail className="size-3" />
+                    Retry joining the bar
+                  </a>
+                )}
+              </div>
+            )}
+
+            <button
+              disabled={pending}
+              className="group mt-2 inline-flex h-11 items-center justify-center gap-2 rounded-[8px] bg-ink text-[13px] font-medium text-white transition hover:bg-black disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {pending ? 'Please wait…' : !isSignUp ? 'Sign in' : path === 'join' ? 'Create account and join' : 'Create account'}
+              {!pending && <ArrowRight className="size-4 transition-transform group-hover:translate-x-0.5" />}
+            </button>
+          </form>
+        </div>
+
+        <div className="mx-auto w-full max-w-[404px] border-t border-line pt-4 text-center text-xs text-ink-muted">
+          {isSignUp ? 'Already have an account?' : 'Need an account?'}{' '}
+          <a className="font-semibold text-ink underline decoration-ink/20 underline-offset-2 hover:decoration-ink" href={isSignUp ? '/sign-in' : '/sign-up'}>
+            {isSignUp ? 'Sign in' : 'Create one'}
+          </a>
+          {!isSignUp && (
+            <p className="mt-1.5 text-[11px]">
+              Invited to a bar?{' '}
+              <a href="/join" className="font-semibold text-brand underline decoration-brand/30 underline-offset-2 hover:decoration-brand">Enter your code</a>
+            </p>
+          )}
+        </div>
+      </main>
     </div>
-  </main>
+  )
 }

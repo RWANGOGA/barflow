@@ -51,15 +51,15 @@ const dateLabel = (value?: string | null) =>
   value ? formatDate(value, readCachedRegional()) : '—'
 
 const roleTone: Record<Role, string> = {
-  Owner: 'border-[#d8b9ff] bg-[#fbefff] text-[#8250df]',
-  Admin: 'border-[#b6e3ff] bg-[#ddf4ff] text-[#0969da]',
-  Manager: 'border-[#aceebb] bg-[#dafbe1] text-[#1a7f37]',
-  Cashier: 'border-[#d0d7de] bg-[#f6f8fa] text-[#57606a]',
-  Storekeeper: 'border-[#f5d9a8] bg-[#fff8c5] text-[#9a6700]',
+  Owner: 'text-ink',
+  Admin: 'text-ink',
+  Manager: 'text-ink',
+  Cashier: 'text-ink-muted',
+  Storekeeper: 'text-ink-muted',
 }
 
 function RoleBadge({ role }: { role: Role }) {
-  return <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-semibold ${roleTone[role] ?? roleTone.Cashier}`}>{role}</span>
+  return <span className={`text-[9px] font-semibold uppercase tracking-[0.14em] ${roleTone[role] ?? roleTone.Cashier}`}>{role}</span>
 }
 
 export function TeamPanel({ toast }: { toast: (message: string) => void }) {
@@ -189,32 +189,32 @@ export function TeamPanel({ toast }: { toast: (message: string) => void }) {
     await load()
   }
 
-  const header = <div className="flex flex-col gap-3 border-b border-[#d8dee4] pb-4 sm:flex-row sm:items-end sm:justify-between">
-    <div>
-      <p className="text-xs font-semibold text-[#57606a]">Access control</p>
-      <h2 className="mt-1 text-2xl font-semibold tracking-tight">Team &amp; permissions</h2>
-      <p className="mt-1 max-w-2xl text-sm text-[#57606a]">
-        Each person signs in with their own account. Accounts are never shared, and every sensitive action records who approved it.
-      </p>
+  const header = <div className="border-b border-line pb-10 text-center">
+    <p className="eyebrow justify-center">Access control</p>
+    <h2 className="display mx-auto mt-4 max-w-3xl text-balance text-[34px] sm:text-[44px]">Team &amp; permissions</h2>
+    <p className="mx-auto mt-4 max-w-xl text-[13px] leading-relaxed text-ink-muted sm:text-sm">
+      Each person signs in with their own account. Accounts are never shared, and every sensitive action records who approved it.
+    </p>
+    <div className="mt-7 flex justify-center">
+      <button onClick={() => { setInviteOpen(true); setIssued(null); setInviteError('') }} className="inline-flex shrink-0 items-center justify-center gap-2 rounded-[8px] bg-ink px-3.5 py-2 text-[12px] font-medium text-white transition hover:bg-black">
+        <UserPlus className="size-3.5"/>Invite member
+      </button>
     </div>
-    <button onClick={() => { setInviteOpen(true); setIssued(null); setInviteError('') }} className="inline-flex shrink-0 items-center justify-center gap-2 rounded-md bg-[#1f883d] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#1a7f37]">
-      <UserPlus className="size-4"/>Invite member
-    </button>
   </div>
 
   if (loading && !data) {
-    return <div className="mx-auto w-full max-w-[1200px]">
+    return <div className="mx-auto w-full max-w-[1180px]">
       {header}
-      <div className="mt-6 flex items-center gap-2 rounded-lg border border-[#d0d7de] bg-white p-8 text-sm text-[#57606a]"><Loader2 className="size-4 animate-spin"/>Loading members…</div>
+      <div className="mt-10 flex items-center justify-center gap-2 border-t border-line pt-10 text-[12px] text-ink-muted"><Loader2 className="size-3.5 animate-spin"/>Loading members…</div>
     </div>
   }
 
   if (error && !data) {
-    return <div className="mx-auto w-full max-w-[1200px]">
+    return <div className="mx-auto w-full max-w-[1180px]">
       {header}
-      <div role="alert" className="mt-6 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-[#ffcecb] bg-[#ffebe9] p-5 text-sm font-semibold text-[#cf222e]">
+      <div role="alert" className="mt-10 flex flex-wrap items-center justify-between gap-3 border-y border-line py-4 text-[12px] font-medium text-alert">
         <span>{error}</span>
-        <button onClick={() => void load()} className="inline-flex items-center gap-1.5 rounded-md border border-[#cf222e]/30 bg-white px-3 py-1.5 text-xs font-semibold"><RefreshCw className="size-3.5"/>Retry</button>
+        <button onClick={() => void load()} className="inline-flex items-center gap-1.5 rounded-[5px] border border-line-strong px-2.5 py-1 text-[11px] font-medium text-ink-muted hover:text-ink"><RefreshCw className="size-3.5"/>Retry</button>
       </div>
     </div>
   }
@@ -228,188 +228,188 @@ export function TeamPanel({ toast }: { toast: (message: string) => void }) {
     { id: 'permissions', label: 'Permission matrix' },
   ]
 
-  return <div className="mx-auto w-full max-w-[1200px]">
+  return <div className="mx-auto w-full max-w-[1180px]">
     {header}
 
-    <div className="mt-5 grid gap-3 sm:grid-cols-3">
+    <div className="mt-10 grid gap-px border-y border-line bg-line sm:grid-cols-3">
       {[
         { label: 'Workspace', value: data.workspace.name, note: 'Bar this team belongs to' },
         { label: 'Active members', value: String(data.members.length - pendingMembers), note: pendingMembers ? `${pendingMembers} suspended` : 'Everyone can sign in' },
         { label: 'Pending invites', value: String(data.invitations.length), note: data.invitations.length ? 'Waiting to be accepted' : 'No outstanding invites' },
-      ].map((card) => <div key={card.label} className="rounded-lg border border-[#d0d7de] bg-white p-4">
-        <p className="text-[11px] font-semibold uppercase tracking-[.06em] text-[#57606a]">{card.label}</p>
-        <p className="mt-1 truncate text-lg font-semibold">{card.value}</p>
-        <p className="mt-0.5 text-xs text-[#57606a]">{card.note}</p>
+      ].map((card) => <div key={card.label} className="bg-canvas px-5 py-6">
+        <p className="micro">{card.label}</p>
+        <p className="mt-3 truncate text-[19px] font-medium tracking-tight">{card.value}</p>
+        <p className="mt-1 text-[11px] text-ink-muted">{card.note}</p>
       </div>)}
     </div>
 
-    <div className="mt-5 flex gap-1 overflow-x-auto rounded-md border border-[#d0d7de] bg-white p-1">
-      {tabs.map((entry) => <button key={entry.id} onClick={() => setTab(entry.id)} className={`inline-flex shrink-0 items-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold ${tab === entry.id ? 'bg-[#f6f8fa] text-[#1f2328]' : 'text-[#57606a] hover:text-[#1f2328]'}`}>
+    <div className="mt-8 flex gap-6 overflow-x-auto border-b border-line">
+      {tabs.map((entry) => <button key={entry.id} onClick={() => setTab(entry.id)} className={`-mb-px inline-flex shrink-0 items-center gap-1.5 border-b-2 pb-2.5 text-[12px] font-medium transition ${tab === entry.id ? 'border-ink text-ink' : 'border-transparent text-ink-muted hover:text-ink'}`}>
         {entry.label}
-        {entry.count !== undefined && <span className="rounded-full bg-[#eaeef2] px-1.5 text-[10px] font-bold text-[#57606a]">{entry.count}</span>}
+        {entry.count !== undefined && <span className="text-[10px] tabular-nums text-ink-soft">{entry.count}</span>}
       </button>)}
     </div>
 
-    {tab === 'members' && <div className="mt-4 overflow-hidden rounded-lg border border-[#d0d7de] bg-white">
+    {tab === 'members' && <div className="mt-8">
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[760px] text-left text-sm">
-          <thead className="bg-[#f6f8fa] text-[11px] uppercase tracking-[.04em] text-[#57606a]">
-            <tr><th className="px-4 py-3 font-semibold">Member</th><th className="px-4 py-3 font-semibold">Role</th><th className="px-4 py-3 font-semibold">Status</th><th className="px-4 py-3 font-semibold">Joined</th><th className="px-4 py-3 text-right font-semibold">Actions</th></tr>
+        <table className="w-full min-w-[760px] text-left text-[13px]">
+          <thead className="border-b border-line text-[9px] font-semibold uppercase tracking-[0.16em] text-ink-muted">
+            <tr><th className="px-3 pb-2 font-semibold">Member</th><th className="px-3 pb-2 font-semibold">Role</th><th className="px-3 pb-2 font-semibold">Status</th><th className="px-3 pb-2 font-semibold">Joined</th><th className="px-3 pb-2 text-right font-semibold">Actions</th></tr>
           </thead>
           <tbody>
             {data.members.map((member) => {
               const editable = canManage(member)
-              return <tr key={member.id} className="border-t border-[#eaeef2] align-middle">
-                <td className="px-4 py-3">
+              return <tr key={member.id} className="border-b border-line align-middle last:border-0">
+                <td className="px-3 py-3">
                   <div className="flex items-center gap-3">
-                    <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-[#eaeef2] text-[11px] font-bold text-[#57606a]">{member.name.trim().split(/\s+/).slice(0,2).map(part=>part[0]?.toUpperCase()??'').join('')||'??'}</span>
+                    <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-well text-[10px] font-medium text-ink">{member.name.trim().split(/\s+/).slice(0,2).map(part=>part[0]?.toUpperCase()??'').join('')||'??'}</span>
                     <div className="min-w-0">
-                      <p className="flex items-center gap-1.5 truncate font-semibold">{member.name}{member.userId === data.me.actorId && <span className="rounded-full bg-[#ddf4ff] px-1.5 py-0.5 text-[10px] font-semibold text-[#0969da]">You</span>}</p>
-                      <p className="truncate text-xs text-[#57606a]">{member.email}</p>
+                      <p className="flex items-center gap-1.5 truncate font-medium">{member.name}{member.userId === data.me.actorId && <span className="shrink-0 text-[9px] font-semibold uppercase tracking-[0.14em] text-ink-soft">You</span>}</p>
+                      <p className="truncate text-[11px] text-ink-muted">{member.email}</p>
                     </div>
                   </div>
                 </td>
-                <td className="px-4 py-3">
+                <td className="px-3 py-3">
                   {editable
-                    ? <select value={member.role} disabled={busyId === member.id} onChange={(event) => void changeRole(member, event.target.value as Role)} aria-label={`Role for ${member.name}`} className="h-8 rounded-md border border-[#d0d7de] bg-white px-2 text-xs font-semibold disabled:opacity-50">
+                    ? <select value={member.role} disabled={busyId === member.id} onChange={(event) => void changeRole(member, event.target.value as Role)} aria-label={`Role for ${member.name}`} className="field h-8 w-auto text-[12px] disabled:opacity-50">
                         {grantable.map((entry) => <option key={entry.role} value={entry.role}>{entry.role}</option>)}
                       </select>
                     : <RoleBadge role={member.role}/>}
                 </td>
-                <td className="px-4 py-3"><span className={`inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-semibold ${member.status === 'active' ? 'bg-[#dafbe1] text-[#1a7f37]' : 'bg-[#fff8c5] text-[#9a6700]'}`}><span className="size-1.5 rounded-full bg-current"/>{member.status === 'active' ? 'Active' : 'Suspended'}</span></td>
-                <td className="px-4 py-3 text-xs text-[#57606a]">{dateLabel(member.createdAt)}</td>
-                <td className="px-4 py-3 text-right">
+                <td className="px-3 py-3"><span className={`inline-flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] ${member.status === 'active' ? 'text-ink' : 'text-warn'}`}><span className="size-1.5 rounded-full bg-current"/>{member.status === 'active' ? 'Active' : 'Suspended'}</span></td>
+                <td className="px-3 py-3 text-[11px] text-ink-muted">{dateLabel(member.createdAt)}</td>
+                <td className="px-3 py-3 text-right">
                   {editable
-                    ? <button onClick={() => setConfirming({ kind: 'member', id: member.id, label: member.name })} className="inline-flex items-center gap-1.5 rounded-md border border-[#d0d7de] px-2.5 py-1.5 text-xs font-semibold text-[#cf222e] hover:bg-[#ffebe9]"><Trash2 className="size-3.5"/>Remove</button>
-                    : <span className="text-xs text-[#57606a]">{member.role === 'Owner' ? 'Owner is protected' : '—'}</span>}
+                    ? <button onClick={() => setConfirming({ kind: 'member', id: member.id, label: member.name })} className="inline-flex items-center gap-1.5 text-[11px] font-medium text-alert transition hover:underline"><Trash2 className="size-3"/>Remove</button>
+                    : <span className="text-[11px] text-ink-soft">{member.role === 'Owner' ? 'Owner is protected' : '—'}</span>}
                 </td>
               </tr>
             })}
           </tbody>
         </table>
       </div>
-      <div className="flex items-start gap-2 border-t border-[#eaeef2] bg-[#f6f8fa] px-4 py-3 text-xs text-[#57606a]">
-        <ShieldCheck className="mt-0.5 size-4 shrink-0 text-[#1a7f37]"/>
+      <div className="flex items-start gap-2 border-t border-line py-3 text-[11px] leading-relaxed text-ink-muted">
+        <ShieldCheck className="mt-0.5 size-3.5 shrink-0 text-ink-soft"/>
         <p>Removing a member deletes their membership and ends their sessions immediately. The Owner can never be removed or demoted.</p>
       </div>
     </div>}
 
-    {tab === 'invitations' && <div className="mt-4 overflow-hidden rounded-lg border border-[#d0d7de] bg-white">
+    {tab === 'invitations' && <div className="mt-8">
       {data.invitations.length === 0
-        ? <div className="flex flex-col items-center gap-2 p-10 text-center">
-            <Mail className="size-6 text-[#57606a]"/>
-            <p className="text-sm font-semibold">No pending invitations</p>
-            <p className="max-w-sm text-xs text-[#57606a]">Invite a manager, cashier or storekeeper and share the one-time code with them. Codes expire after 7 days.</p>
-            <button onClick={() => setInviteOpen(true)} className="mt-2 inline-flex items-center gap-1.5 rounded-md bg-[#1f883d] px-3 py-2 text-xs font-semibold text-white"><UserPlus className="size-3.5"/>Invite member</button>
+        ? <div className="flex flex-col items-center gap-2 border-b border-line py-14 text-center">
+            <Mail className="size-5 text-ink-soft"/>
+            <p className="text-[13px] font-medium text-ink-muted">No pending invitations</p>
+            <p className="max-w-sm text-[12px] leading-relaxed text-ink-soft">Invite a manager, cashier or storekeeper and share the one-time code with them. Codes expire after 7 days.</p>
+            <button onClick={() => setInviteOpen(true)} className="mt-3 inline-flex items-center gap-1.5 rounded-[7px] bg-ink px-3.5 py-2 text-[11px] font-medium text-white transition hover:bg-black"><UserPlus className="size-3"/>Invite member</button>
           </div>
         : <div className="overflow-x-auto">
-            <table className="w-full min-w-[700px] text-left text-sm">
-              <thead className="bg-[#f6f8fa] text-[11px] uppercase tracking-[.04em] text-[#57606a]">
-                <tr><th className="px-4 py-3 font-semibold">Email</th><th className="px-4 py-3 font-semibold">Role</th><th className="px-4 py-3 font-semibold">Invited by</th><th className="px-4 py-3 font-semibold">Expires</th><th className="px-4 py-3 text-right font-semibold">Actions</th></tr>
+            <table className="w-full min-w-[700px] text-left text-[13px]">
+              <thead className="border-b border-line text-[9px] font-semibold uppercase tracking-[0.16em] text-ink-muted">
+                <tr><th className="px-3 pb-2 font-semibold">Email</th><th className="px-3 pb-2 font-semibold">Role</th><th className="px-3 pb-2 font-semibold">Invited by</th><th className="px-3 pb-2 font-semibold">Expires</th><th className="px-3 pb-2 text-right font-semibold">Actions</th></tr>
               </thead>
               <tbody>
-                {data.invitations.map((invite) => <tr key={invite.id} className="border-t border-[#eaeef2]">
-                  <td className="px-4 py-3 font-semibold">{invite.email}</td>
-                  <td className="px-4 py-3"><RoleBadge role={invite.role}/></td>
-                  <td className="px-4 py-3 text-xs text-[#57606a]">{invite.invitedBy ?? '—'}</td>
-                  <td className="px-4 py-3 text-xs text-[#57606a]"><span className="inline-flex items-center gap-1.5"><Clock className="size-3.5"/>{dateLabel(invite.expiresAt)}</span></td>
-                  <td className="px-4 py-3 text-right"><button onClick={() => setConfirming({ kind: 'invite', id: invite.id, label: invite.email })} className="inline-flex items-center gap-1.5 rounded-md border border-[#d0d7de] px-2.5 py-1.5 text-xs font-semibold text-[#cf222e] hover:bg-[#ffebe9]"><X className="size-3.5"/>Revoke</button></td>
+                {data.invitations.map((invite) => <tr key={invite.id} className="border-b border-line last:border-0">
+                  <td className="px-3 py-3 font-medium">{invite.email}</td>
+                  <td className="px-3 py-3"><RoleBadge role={invite.role}/></td>
+                  <td className="px-3 py-3 text-[11px] text-ink-muted">{invite.invitedBy ?? '—'}</td>
+                  <td className="px-3 py-3 text-[11px] text-ink-muted"><span className="inline-flex items-center gap-1.5"><Clock className="size-3"/>{dateLabel(invite.expiresAt)}</span></td>
+                  <td className="px-3 py-3 text-right"><button onClick={() => setConfirming({ kind: 'invite', id: invite.id, label: invite.email })} className="inline-flex items-center gap-1.5 text-[11px] font-medium text-alert transition hover:underline"><X className="size-3"/>Revoke</button></td>
                 </tr>)}
               </tbody>
             </table>
           </div>}
     </div>}
 
-    {tab === 'permissions' && <div className="mt-4 overflow-hidden rounded-lg border border-[#d0d7de] bg-white">
-      <div className="border-b border-[#eaeef2] px-4 py-3">
-        <p className="flex items-center gap-2 text-sm font-semibold"><UsersRound className="size-4"/>Who can do what</p>
-        <p className="mt-1 text-xs text-[#57606a]">Owner and Admin hold every capability. Voids and discounts additionally need an approval PIN at the till.</p>
+    {tab === 'permissions' && <div className="mt-8">
+      <div className="border-b border-line pb-4">
+        <p className="flex items-center gap-2 text-[13px] font-medium"><UsersRound className="size-3.5 text-ink-soft"/>Who can do what</p>
+        <p className="mt-1 text-[12px] leading-relaxed text-ink-muted">Owner and Admin hold every capability. Voids and discounts additionally need an approval PIN at the till.</p>
       </div>
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[760px] text-left text-sm">
-          <thead className="bg-[#f6f8fa] text-[11px] uppercase tracking-[.04em] text-[#57606a]">
+        <table className="w-full min-w-[760px] text-left text-[13px]">
+          <thead className="border-b border-line text-[9px] font-semibold uppercase tracking-[0.16em] text-ink-muted">
             <tr>
-              <th className="px-4 py-3 font-semibold">Capability</th>
-              {(['Owner','Admin','Manager','Cashier','Storekeeper'] as Role[]).map((role) => <th key={role} className="px-3 py-3 text-center font-semibold">{role}</th>)}
+              <th className="px-3 pb-2 font-semibold">Capability</th>
+              {(['Owner','Admin','Manager','Cashier','Storekeeper'] as Role[]).map((role) => <th key={role} className="px-3 pb-2 text-center font-semibold">{role}</th>)}
             </tr>
           </thead>
           <tbody>
-            {data.matrix.map((row) => <tr key={row.permission} className="border-t border-[#eaeef2]">
-              <td className="px-4 py-2.5">
+            {data.matrix.map((row) => <tr key={row.permission} className="border-b border-line last:border-0">
+              <td className="px-3 py-2.5">
                 <p className="font-medium">{row.label}</p>
-                <p className="font-mono text-[10px] text-[#57606a]">{row.permission}</p>
+                <p className="font-mono text-[10px] text-ink-soft">{row.permission}</p>
               </td>
               {(['Owner','Admin','Manager','Cashier','Storekeeper'] as Role[]).map((role) => <td key={role} className="px-3 py-2.5 text-center">
                 {row.roles.includes(role)
-                  ? <Check className="mx-auto size-4 text-[#1a7f37]" aria-label={`${role} allowed`}/>
-                  : <span className="text-[#d0d7de]" aria-label={`${role} not allowed`}>—</span>}
+                  ? <Check className="mx-auto size-3.5 text-ink" aria-label={`${role} allowed`}/>
+                  : <span className="text-ink-soft" aria-label={`${role} not allowed`}>—</span>}
               </td>)}
             </tr>)}
           </tbody>
         </table>
       </div>
-      <div className="border-t border-[#eaeef2] bg-[#f6f8fa] px-4 py-3">
-        <p className="text-[11px] font-semibold uppercase tracking-[.06em] text-[#57606a]">Role notes</p>
-        <div className="mt-2 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-          {data.roles.map((entry) => <div key={entry.role} className="rounded-md border border-[#d0d7de] bg-white p-3">
+      <div className="border-t border-line pt-5">
+        <p className="micro">Role notes</p>
+        <div className="mt-3 grid gap-x-8 gap-y-5 sm:grid-cols-2 lg:grid-cols-3">
+          {data.roles.map((entry) => <div key={entry.role} className="border-t border-line pt-2.5">
             <RoleBadge role={entry.role}/>
-            <p className="mt-1.5 text-xs leading-relaxed text-[#57606a]">{entry.description}</p>
+            <p className="mt-1.5 text-[12px] leading-relaxed text-ink-muted">{entry.description}</p>
           </div>)}
         </div>
       </div>
     </div>}
 
-    {inviteOpen && <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#1f2328]/50 p-4" role="dialog" aria-modal="true" aria-label="Invite a team member">
-      <div className="w-full max-w-lg rounded-lg border border-[#d0d7de] bg-white p-6 shadow-xl">
+    {inviteOpen && <div className="scrim" role="dialog" aria-modal="true" aria-label="Invite a team member">
+      <div className="dialog max-w-lg p-6">
         <div className="flex items-start justify-between">
           <div>
-            <p className="text-[11px] font-semibold uppercase tracking-[.06em] text-[#57606a]">Team invite</p>
-            <h3 className="mt-1 text-lg font-semibold">{issued ? 'Share the invitation' : 'Invite a team member'}</h3>
-            <p className="mt-1 text-sm text-[#57606a]">{issued ? 'The code works once and is bound to the email below.' : 'They will create their own account. You choose the role; they never choose it themselves.'}</p>
+            <p className="micro">Team invite</p>
+            <h3 className="mt-2 text-[20px] font-semibold tracking-tight">{issued ? 'Share the invitation' : 'Invite a team member'}</h3>
+            <p className="mt-1.5 text-[12px] leading-relaxed text-ink-muted">{issued ? 'The code works once and is bound to the email below.' : 'They will create their own account. You choose the role; they never choose it themselves.'}</p>
           </div>
-          <button aria-label="Close" onClick={() => { setInviteOpen(false); setIssued(null); setInviteError('') }} className="rounded-md p-2 text-[#57606a] hover:bg-[#f6f8fa]"><X className="size-5"/></button>
+          <button aria-label="Close" onClick={() => { setInviteOpen(false); setIssued(null); setInviteError('') }} className="rounded-[6px] p-1.5 text-ink-muted hover:bg-canvas"><X className="size-4"/></button>
         </div>
 
         {!issued ? <form onSubmit={sendInvite} className="mt-5 flex flex-col gap-4">
-          <label className="text-xs font-semibold text-[#57606a]">Work email
-            <input required type="email" autoFocus value={inviteEmail} onChange={(event) => setInviteEmail(event.target.value)} placeholder="name@bar.com" className="mt-1.5 h-10 w-full rounded-md border border-[#d0d7de] px-3 text-sm font-normal text-[#1f2328] outline-none focus:border-[#0969da] focus:ring-2 focus:ring-[#0969da]/20"/>
+          <label className="text-[11px] font-medium text-ink-muted">Work email
+            <input required type="email" autoFocus value={inviteEmail} onChange={(event) => setInviteEmail(event.target.value)} placeholder="name@bar.com" className="field mt-1.5"/>
           </label>
-          <label className="text-xs font-semibold text-[#57606a]">Role
-            <select value={inviteRole} onChange={(event) => setInviteRole(event.target.value as Role)} className="mt-1.5 h-10 w-full rounded-md border border-[#d0d7de] bg-white px-3 text-sm font-normal text-[#1f2328]">
+          <label className="text-[11px] font-medium text-ink-muted">Role
+            <select value={inviteRole} onChange={(event) => setInviteRole(event.target.value as Role)} className="field mt-1.5">
               {grantable.map((entry) => <option key={entry.role} value={entry.role}>{entry.role}</option>)}
             </select>
           </label>
-          <p className="rounded-md border border-[#d0d7de] bg-[#f6f8fa] p-3 text-xs leading-relaxed text-[#57606a]">{data.roles.find((entry) => entry.role === inviteRole)?.description}</p>
-          {inviteError && <p role="alert" className="rounded-md border border-[#ffcecb] bg-[#ffebe9] px-3 py-2 text-xs font-semibold text-[#cf222e]">{inviteError}</p>}
-          <div className="flex justify-end gap-2">
-            <button type="button" onClick={() => setInviteOpen(false)} className="rounded-md border border-[#d0d7de] px-4 py-2.5 text-sm font-semibold">Cancel</button>
-            <button disabled={inviteBusy} className="inline-flex items-center gap-2 rounded-md bg-[#1f883d] px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-60">{inviteBusy ? <Loader2 className="size-4 animate-spin"/> : <Mail className="size-4"/>}Create invitation</button>
+          <p className="border-l-2 border-line pl-3 text-[12px] leading-relaxed text-ink-muted">{data.roles.find((entry) => entry.role === inviteRole)?.description}</p>
+          {inviteError && <p role="alert" className="border-l-2 border-alert bg-alert-tint/60 px-3 py-2 text-[11px] font-medium text-alert">{inviteError}</p>}
+          <div className="flex justify-end gap-2 border-t border-line pt-4">
+            <button type="button" onClick={() => setInviteOpen(false)} className="rounded-[8px] border border-line-strong px-3.5 py-2 text-[12px] font-medium text-ink-muted transition hover:border-ink hover:text-ink">Cancel</button>
+            <button disabled={inviteBusy} className="inline-flex items-center gap-2 rounded-[8px] bg-ink px-4 py-2 text-[12px] font-medium text-white transition hover:bg-black disabled:opacity-60">{inviteBusy ? <Loader2 className="size-3.5 animate-spin"/> : <Mail className="size-3.5"/>}Create invitation</button>
           </div>
         </form> : <div className="mt-5">
-          <div className="rounded-md border border-[#d0d7de] bg-[#f6f8fa] p-4 text-center">
-            <p className="text-[11px] font-semibold uppercase tracking-[.08em] text-[#57606a]">One-time code</p>
-            <p className="mt-1 font-mono text-2xl font-bold tracking-[.2em]">{issued.code}</p>
-            <p className="mt-1 text-xs text-[#57606a]">{issued.email} · {issued.role} · expires {dateLabel(issued.expiresAt)}</p>
+          <div className="border-y border-line py-6 text-center">
+            <p className="micro">One-time code</p>
+            <p className="mt-2 font-mono text-[26px] font-semibold tracking-[0.18em]">{issued.code}</p>
+            <p className="mt-2 text-[11px] text-ink-muted">{issued.email} · {issued.role} · expires {dateLabel(issued.expiresAt)}</p>
           </div>
-          <button onClick={() => void copyCode()} className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-md border border-[#d0d7de] px-4 py-2.5 text-sm font-semibold hover:bg-[#f6f8fa]">
-            {copied ? <><Check className="size-4 text-[#1a7f37]"/>Copied</> : <><Copy className="size-4"/>Copy code and join link</>}
+          <button onClick={() => void copyCode()} className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-[8px] border border-line-strong px-4 py-2 text-[12px] font-medium transition hover:border-ink">
+            {copied ? <><Check className="size-3.5 text-ink"/>Copied</> : <><Copy className="size-3.5"/>Copy code and join link</>}
           </button>
-          <p className="mt-2 break-all rounded-md bg-[#f6f8fa] p-2 font-mono text-[10px] text-[#57606a]">{`${typeof window !== 'undefined' ? window.location.origin : ''}${issued.joinUrl}`}</p>
-          <p className="mt-2 text-xs text-[#57606a]">Only the hash is stored, so this code cannot be shown again. Create a new invite if it is lost.</p>
-          <div className="mt-4 flex justify-end"><button onClick={() => { setInviteOpen(false); setIssued(null) }} className="rounded-md bg-[#1f883d] px-4 py-2.5 text-sm font-semibold text-white">Done</button></div>
+          <p className="mt-3 break-all border border-line px-2 py-1.5 font-mono text-[10px] text-ink-muted">{`${typeof window !== 'undefined' ? window.location.origin : ''}${issued.joinUrl}`}</p>
+          <p className="mt-3 text-[11px] leading-relaxed text-ink-muted">Only the hash is stored, so this code cannot be shown again. Create a new invite if it is lost.</p>
+          <div className="mt-5 flex justify-end border-t border-line pt-4"><button onClick={() => { setInviteOpen(false); setIssued(null) }} className="rounded-[8px] bg-ink px-4 py-2 text-[12px] font-medium text-white transition hover:bg-black">Done</button></div>
         </div>}
       </div>
     </div>}
 
-    {confirming && <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#1f2328]/50 p-4" role="dialog" aria-modal="true" aria-label="Confirm removal">
-      <div className="w-full max-w-md rounded-lg border border-[#d0d7de] bg-white p-6 shadow-xl">
-        <h3 className="text-lg font-semibold">{confirming.kind === 'member' ? 'Remove member?' : 'Revoke invitation?'}</h3>
-        <p className="mt-1 text-sm text-[#57606a]">{confirming.kind === 'member'
+    {confirming && <div className="scrim" role="dialog" aria-modal="true" aria-label="Confirm removal">
+      <div className="dialog max-w-md p-6">
+        <h3 className="text-[20px] font-semibold tracking-tight">{confirming.kind === 'member' ? 'Remove member?' : 'Revoke invitation?'}</h3>
+        <p className="mt-1.5 text-[12px] leading-relaxed text-ink-muted">{confirming.kind === 'member'
           ? `${confirming.label} will lose access immediately and their sessions will be ended. History stays in the audit log.`
           : `${confirming.label} will no longer be able to use this invitation code.`}</p>
-        <div className="mt-5 flex justify-end gap-2">
-          <button onClick={() => setConfirming(null)} className="rounded-md border border-[#d0d7de] px-4 py-2.5 text-sm font-semibold">Cancel</button>
-          <button disabled={confirmBusy} onClick={() => void confirmAction()} className="inline-flex items-center gap-2 rounded-md bg-[#cf222e] px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-60">{confirmBusy && <Loader2 className="size-4 animate-spin"/>}{confirming.kind === 'member' ? 'Remove member' : 'Revoke'}</button>
+        <div className="mt-5 flex justify-end gap-2 border-t border-line pt-4">
+          <button onClick={() => setConfirming(null)} className="rounded-[8px] border border-line-strong px-3.5 py-2 text-[12px] font-medium text-ink-muted transition hover:border-ink hover:text-ink">Cancel</button>
+          <button disabled={confirmBusy} onClick={() => void confirmAction()} className="inline-flex items-center gap-2 rounded-[8px] bg-alert px-4 py-2 text-[12px] font-medium text-white transition hover:bg-[#8a201a] disabled:opacity-60">{confirmBusy && <Loader2 className="size-3.5 animate-spin"/>}{confirming.kind === 'member' ? 'Remove member' : 'Revoke'}</button>
         </div>
       </div>
     </div>}

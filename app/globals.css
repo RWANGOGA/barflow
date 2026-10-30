@@ -5,6 +5,8 @@
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
+  --font-sans: var(--font-ui), ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-serif: var(--font-editorial), ui-serif, Georgia, 'Times New Roman', serif;
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -36,50 +38,97 @@
   --color-card: var(--card);
   --color-foreground: var(--foreground);
   --color-background: var(--background);
-  --radius-sm: calc(var(--radius) * 0.6);
-  --radius-md: calc(var(--radius) * 0.8);
+  /* Semantic aliases: components speak in ink/line/brand, not hex. */
+  --color-canvas: var(--canvas);
+  --color-surface: var(--surface);
+  --color-sunk: var(--surface-sunk);
+  --color-well: var(--well);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-ink: var(--foreground);
+  --color-ink-muted: var(--ink-muted);
+  --color-ink-soft: var(--ink-soft);
+  --color-brand: var(--brand);
+  --color-brand-deep: var(--brand-deep);
+  --color-brand-tint: var(--brand-tint);
+  --color-brand-soft: var(--brand-soft);
+  --color-brass: var(--brass);
+  --color-brass-soft: var(--brass-soft);
+  --color-alert: var(--alert);
+  --color-alert-tint: var(--alert-tint);
+  --color-alert-line: var(--alert-line);
+  --color-warn: var(--warn);
+  --color-warn-tint: var(--warn-tint);
+  --color-info: var(--info);
+  --color-info-tint: var(--info-tint);
+  --radius-sm: calc(var(--radius) * 0.55);
+  --radius-md: calc(var(--radius) * 0.72);
   --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) * 1.4);
-  --radius-2xl: calc(var(--radius) * 1.8);
-  --radius-3xl: calc(var(--radius) * 2.2);
-  --radius-4xl: calc(var(--radius) * 2.6);
+  --radius-xl: calc(var(--radius) * 1.25);
+  --radius-2xl: calc(var(--radius) * 1.6);
+  --radius-3xl: calc(var(--radius) * 2);
+  --radius-4xl: calc(var(--radius) * 2.4);
 }
 
-/* GitHub Primer-inspired palette: flat borders, restrained accents, 6px controls. */
+/* A neutral instrument palette: paper-white canvas, graphite ink, hairline rules.
+   Colour is reserved for state (open, low, voided), never for decoration. */
 :root {
   color-scheme: light;
-  --background: #f6f8fa;
-  --foreground: #1f2328;
+  --background: #fbfbfc;
+  --foreground: #0b0c0e;
   --card: #ffffff;
-  --card-foreground: #1f2328;
+  --card-foreground: #0b0c0e;
   --popover: #ffffff;
-  --popover-foreground: #1f2328;
-  --primary: #1f883d;
+  --popover-foreground: #0b0c0e;
+  --primary: #0b0c0e;
   --primary-foreground: #ffffff;
-  --secondary: #f6f8fa;
-  --secondary-foreground: #1f2328;
-  --muted: #f6f8fa;
-  --muted-foreground: #57606a;
-  --accent: #f6f8fa;
-  --accent-foreground: #1f2328;
-  --destructive: #cf222e;
-  --border: #d0d7de;
-  --input: #d0d7de;
-  --ring: #0969da;
-  --chart-1: #0969da;
-  --chart-2: #1f883d;
-  --chart-3: #9a6700;
-  --chart-4: #8250df;
-  --chart-5: #cf222e;
-  --radius: 0.375rem;
+  --secondary: #f2f2f4;
+  --secondary-foreground: #0b0c0e;
+  --muted: #f2f2f4;
+  --muted-foreground: #6b6b75;
+  --accent: #f2f2f4;
+  --accent-foreground: #0b0c0e;
+  --destructive: #c0362c;
+  --border: #e6e6ea;
+  --input: #d9d9de;
+  --ring: #0b0c0e;
+  --chart-1: #0b0c0e;
+  --chart-2: #57575f;
+  --chart-3: #8b8b95;
+  --chart-4: #b9b9c1;
+  --chart-5: #dddde2;
+  --radius: 0.75rem;
   --sidebar: #ffffff;
-  --sidebar-foreground: #1f2328;
-  --sidebar-primary: #1f883d;
+  --sidebar-foreground: #0b0c0e;
+  --sidebar-primary: #0b0c0e;
   --sidebar-primary-foreground: #ffffff;
-  --sidebar-accent: #f6f8fa;
-  --sidebar-accent-foreground: #1f2328;
-  --sidebar-border: #d0d7de;
-  --sidebar-ring: #0969da;
+  --sidebar-accent: #f2f2f4;
+  --sidebar-accent-foreground: #0b0c0e;
+  --sidebar-border: #e6e6ea;
+  --sidebar-ring: #0b0c0e;
+
+  /* Named surfaces used by the layout chrome. */
+  --canvas: #fbfbfc;
+  --surface: #ffffff;
+  --surface-sunk: #fafafb;
+  --well: #efeff2;
+  --line: #e6e6ea;
+  --line-strong: #d6d6dc;
+  --ink-muted: #6b6b75;
+  --ink-soft: #a2a2ab;
+  --brand: #0b0c0e;
+  --brand-deep: #000000;
+  --brand-tint: #f1f1f4;
+  --brand-soft: #d3d3d9;
+  --brass: #8a8a94;
+  --brass-soft: #c7c7ce;
+  --alert: #c0362c;
+  --alert-tint: #fdf1f0;
+  --alert-line: #f0d4d1;
+  --warn: #8a6410;
+  --warn-tint: #fbf4e3;
+  --info: #45454f;
+  --info-tint: #f2f2f5;
 }
 
 .dark {
@@ -117,38 +166,316 @@
   --sidebar-ring: oklch(0.556 0 0);
 }
 
-/* The interface is intentionally light-only, matching GitHub's default surfaces. */
+/* The interface is intentionally light-only, like a well-lit dining room. */
 
 @layer base {
   * {
     @apply border-border outline-ring/50;
   }
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
   body {
     @apply bg-background text-foreground;
+    font-family: var(--font-ui), ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+    font-feature-settings: 'cv02' 1, 'cv03' 1, 'cv04' 1, 'ss01' 1;
+    -webkit-font-smoothing: antialiased;
+  }
+  /* One voice: tight, confident sans on every heading. Numbers stay tabular. */
+  h1,
+  h2,
+  h3,
+  h4 {
+    font-family: var(--font-ui), ui-sans-serif, system-ui, sans-serif;
+    font-weight: 600;
+    letter-spacing: -0.025em;
+    line-height: 1.15;
+  }
+  .display {
+    font-family: var(--font-ui), ui-sans-serif, system-ui, sans-serif;
+    font-weight: 600;
+    letter-spacing: -0.045em;
+    line-height: 1;
+  }
+  table {
+    font-variant-numeric: tabular-nums;
+  }
+  ::selection {
+    background: #d9d9e0;
+    color: #0b0c0e;
   }
 }
 
-.item-gold { background: #fff8c5; color: #9a6700; }
-.item-green { background: #dafbe1; color: #1a7f37; }
-.item-peach { background: #fff1e5; color: #bc4c00; }
-.item-burgundy { background: #ffebe9; color: #a40e26; }
-.item-slate { background: #eaeef2; color: #57606a; }
-.item-teal { background: #ddf4ff; color: #0969da; }
-.item-pink { background: #ffeff7; color: #bf3989; }
-.item-rose { background: #ffebe9; color: #cf222e; }
+/* ------------------------------- Surfaces -------------------------------- */
 
-.font-serif { font-family: Georgia, 'Times New Roman', serif; }
-button, input, textarea, select { -webkit-tap-highlight-color: transparent; }
-button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible { outline: 2px solid #0969da; outline-offset: -1px; }
-input:focus, textarea:focus, select:focus { border-color: #0969da; }
-button { cursor: pointer; }
-::selection { background: #b6e3ff; color: #1f2328; }
+.panel {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+}
+
+/* A container that carries no frame: pages are built from rules, not boxes. */
+.panel-flat {
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+}
+
+/* Interactive tile (a drink on the menu, a table card). */
+.tile {
+  transition:
+    background-color 0.15s ease,
+    border-color 0.15s ease;
+}
+.tile:hover:not(:disabled) {
+  background: #fff;
+}
+
+/* The navigation rail: white paper with a single hairline edge. */
+.rail {
+  background: #fff;
+  border-right: 1px solid var(--line);
+  isolation: isolate;
+}
+
+.rail-link {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border-radius: 8px;
+  padding: 9px 10px;
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: -0.005em;
+  color: #62626c;
+  transition:
+    background-color 0.15s ease,
+    color 0.15s ease;
+}
+.rail-link:hover {
+  background: #f5f5f7;
+  color: var(--foreground);
+}
+.rail-link[data-active='true'] {
+  background: var(--foreground);
+  color: #fff;
+  font-weight: 500;
+}
+.rail-link[data-active='true']::before {
+  content: none;
+}
+
+/* A wide-tracked section label that opens a page or a card group. */
+.eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+}
+
+/* The one panel on a page that carries the headline number. */
+.anchor {
+  color: #fff;
+  border-color: var(--foreground);
+  background: var(--foreground);
+}
+
+/* Faint baseline grid for charts that have no data yet. */
+.chart-grid {
+  background-image: repeating-linear-gradient(
+    to bottom,
+    var(--line) 0 1px,
+    transparent 1px 33.333%
+  );
+}
+
+.panel-sunk {
+  background: var(--surface-sunk);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+
+/* Every text field in the product shares one skin: 40px, 10px radius, brand focus.
+   Declared in the components layer so a utility can still widen or pad an instance. */
+@layer components {
+  .field {
+    width: 100%;
+    height: 2.5rem;
+    border: 1px solid var(--line-strong);
+    border-radius: 8px;
+    background: #fff;
+    padding: 0 0.75rem;
+    font-size: 0.875rem;
+    color: var(--foreground);
+    transition:
+      border-color 0.15s ease,
+      box-shadow 0.15s ease;
+  }
+  textarea.field {
+    height: auto;
+    padding: 0.5rem 0.75rem;
+  }
+  .field::placeholder {
+    color: var(--ink-soft);
+  }
+  .field:focus {
+    border-color: var(--foreground);
+    box-shadow: 0 0 0 3px rgba(11, 12, 14, 0.08);
+    outline: none;
+  }
+  .field:disabled {
+    background: var(--canvas);
+    color: var(--ink-muted);
+  }
+}
+
+/* Dialogs: a soft scrim and one calm paper panel floating over the shift. */
+.scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  background: rgba(11, 12, 14, 0.35);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+}
+.dialog {
+  width: 100%;
+  max-height: 90vh;
+  overflow-y: auto;
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  background: #fff;
+  box-shadow: 0 40px 90px -50px rgba(11, 12, 14, 0.6);
+}
+
+.topbar {
+  background: var(--canvas);
+}
+
+.paper {
+  background-color: #fff;
+  background-image: repeating-linear-gradient(0deg, rgba(11, 12, 14, 0.03) 0 1px, transparent 1px 26px);
+  box-shadow: inset 0 0 0 1px rgba(11, 12, 14, 0.06);
+}
+
+/* A quiet label: uppercase, wide tracking, never competing with a heading. */
+.micro {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+}
+
+.stat-figure {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.04em;
+  line-height: 1.05;
+}
+
+.rule {
+  height: 1px;
+  background: var(--line);
+}
+
+/* --------------------------- Product tone tiles --------------------------- */
+
+.item-gold { background: #f2f2f4; color: #3c3c45; }
+.item-green { background: #eef0ef; color: #37413c; }
+.item-peach { background: #f3f0ec; color: #4a4237; }
+.item-burgundy { background: #f4eeee; color: #4a3737; }
+.item-slate { background: #efeef1; color: #3f4050; }
+.item-teal { background: #eef1f3; color: #35434a; }
+.item-pink { background: #f4eef1; color: #4a3740; }
+.item-rose { background: #f4eeee; color: #4a3737; }
+
+.font-serif {
+  font-family: var(--font-ui), ui-sans-serif, system-ui, sans-serif;
+}
+
+/* ------------------------------ Interaction ------------------------------- */
+
+button,
+input,
+textarea,
+select,
+a {
+  -webkit-tap-highlight-color: transparent;
+}
+button:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible,
+a:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+input:focus,
+textarea:focus,
+select:focus {
+  border-color: var(--brand);
+}
+button {
+  cursor: pointer;
+}
+button:disabled {
+  cursor: not-allowed;
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #d6d6dc transparent;
+}
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-thumb {
+  background: #d6d6dc;
+  border: 3px solid transparent;
+  border-radius: 999px;
+  background-clip: content-box;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
 
 @media (max-width: 1023px) {
-  body { overflow-x: hidden; }
+  body {
+    overflow-x: hidden;
+  }
+  /* The bottom bar has no room for the rail's active marker. */
+  .rail-link[data-active='true']::before {
+    display: none;
+  }
 }
 
 @media (max-width: 640px) {
-  h1, h2 { letter-spacing: -0.03em; }
-  input, textarea, select { font-size: 16px; }
+  h1,
+  h2 {
+    letter-spacing: -0.035em;
+  }
+  input,
+  textarea,
+  select {
+    font-size: 16px;
+  }
+  .field {
+    font-size: 16px;
+  }
 }

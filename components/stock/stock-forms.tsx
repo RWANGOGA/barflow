@@ -15,9 +15,9 @@ type FormProps = {
   onClose: () => void
 }
 
-const inputClass = 'w-full rounded-md border border-[#d0d7de] bg-white px-3 py-2 text-sm outline-none transition focus:border-[#0969da] focus:ring-2 focus:ring-[#0969da]/20'
-const primaryButton = 'rounded-md bg-[#1f883d] px-4 py-2 text-sm font-bold text-white disabled:opacity-50'
-const ghostButton = 'rounded-md border border-[#d0d7de] bg-white px-4 py-2 text-sm font-bold'
+const inputClass = 'field'
+const primaryButton = 'rounded-[8px] bg-ink px-3.5 py-2 text-[12px] font-medium text-white transition hover:bg-black disabled:opacity-50'
+const ghostButton = 'rounded-[8px] border border-line-strong px-3.5 py-2 text-[12px] font-medium text-ink-muted transition hover:border-ink hover:text-ink'
 const today = () => new Date().toLocaleDateString('en-CA', { timeZone: readCachedRegional().timeZone })
 
 async function readError(response: Response, fallback: string) {
@@ -28,8 +28,8 @@ const errorText = (error: unknown, fallback: string) => (error instanceof Error 
 
 function Field({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <label className="grid gap-1 text-xs">
-      <span className="font-bold text-[#57606a]">{label}</span>
+    <label className="grid gap-1.5">
+      <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-muted">{label}</span>
       {children}
     </label>
   )
@@ -37,10 +37,10 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
 
 function FormShell({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) {
   return (
-    <div className="border-b border-[#eaeef2] bg-[#f6f8fa] p-5">
-      <div className="mb-4 flex items-center justify-between">
-        <h3 className="font-bold">{title}</h3>
-        <button type="button" onClick={onClose} className="text-xs font-bold text-[#57606a]">Close</button>
+    <div className="border-b border-line bg-sunk px-5 py-6">
+      <div className="mb-5 flex items-center justify-between gap-3">
+        <h3 className="text-[15px] font-medium tracking-tight">{title}</h3>
+        <button type="button" onClick={onClose} className="rounded-[6px] px-2 py-1 text-[11px] font-medium text-ink-muted transition hover:bg-well hover:text-ink">Close</button>
       </div>
       {children}
     </div>
@@ -116,7 +116,7 @@ export function DeliveryForm({ products, initialProductId, toast, onStockChanged
         </Field>
         <Field label="Delivery date"><input type="date" className={inputClass} value={date} max={today()} onChange={(e) => setDate(e.target.value)} /></Field>
         <div className="flex items-end justify-between gap-3">
-          <p className="text-xs text-[#57606a]">
+          <p className="text-[11px] text-ink-muted">
             {qty > 0 && unitCost >= 0 ? `Total cost: ${formatMoney(qty * unitCost, regional)}` : ''}
           </p>
           <div className="flex gap-2">
@@ -226,28 +226,28 @@ export function CountSheet({ products, toast, onStockChanged, onClose }: FormPro
   return (
     <FormShell title="Physical stock count" onClose={onClose}>
       <form onSubmit={submit} className="grid gap-4">
-        <div className="overflow-x-auto rounded-md border border-[#d0d7de] bg-white">
-          <table className="w-full min-w-[520px] text-left text-sm">
-            <thead className="text-xs uppercase tracking-wider text-[#57606a]">
-              <tr><th className="p-3">Item</th><th>System</th><th>Counted</th><th>Variance</th></tr>
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[520px] text-left text-[13px]">
+            <thead className="border-b border-line text-[9px] font-semibold uppercase tracking-[0.16em] text-ink-muted">
+              <tr><th className="px-3 pb-2 font-semibold">Item</th><th className="px-3 pb-2 text-right font-semibold">System</th><th className="px-3 pb-2 font-semibold">Counted</th><th className="px-3 pb-2 text-right font-semibold">Variance</th></tr>
             </thead>
             <tbody>
               {products.map((p) => {
                 const raw = counts[p.id] ?? ''
                 const variance = raw.trim() === '' ? null : Number(raw) - p.stock
                 return (
-                  <tr key={p.id} className="border-t border-[#eaeef2]">
-                    <td className="p-3 font-bold">{p.name}</td>
-                    <td>{p.stock}</td>
-                    <td>
+                  <tr key={p.id} className="border-b border-line last:border-0">
+                    <td className="px-3 py-2.5 font-medium">{p.name}</td>
+                    <td className="px-3 py-2.5 text-right tabular-nums text-ink-muted">{p.stock}</td>
+                    <td className="px-3 py-2.5">
                       <input
-                        className="w-24 rounded-lg border border-[#d0d7de] px-2 py-1 text-sm"
+                        className="h-8 w-24 rounded-[6px] border border-line-strong px-2 text-[13px] tabular-nums outline-none transition focus:border-ink"
                         inputMode="numeric"
                         value={raw}
                         onChange={(e) => setCounts((c) => ({ ...c, [p.id]: e.target.value.replace(/\D/g, '') }))}
                       />
                     </td>
-                    <td className={variance === null || variance === 0 ? 'text-[#57606a]' : variance < 0 ? 'font-bold text-[#b44]' : 'font-bold text-[#1a7f37]'}>
+                    <td className={`px-3 py-2.5 text-right tabular-nums ${variance === null || variance === 0 ? 'text-ink-muted' : variance < 0 ? 'font-medium text-alert' : 'font-medium text-ink'}`}>
                       {variance === null ? '—' : variance > 0 ? `+${variance}` : variance}
                     </td>
                   </tr>
@@ -257,7 +257,7 @@ export function CountSheet({ products, toast, onStockChanged, onClose }: FormPro
           </table>
         </div>
         <Field label="Notes (optional)"><input className={inputClass} value={notes} maxLength={500} onChange={(e) => setNotes(e.target.value)} /></Field>
-        <label className="flex items-center gap-2 text-xs font-bold text-[#57606a]">
+        <label className="flex items-center gap-2 text-[11px] font-medium text-ink-muted">
           <input type="checkbox" checked={applyCorrection} onChange={(e) => setApplyCorrection(e.target.checked)} />
           Also correct on-hand stock to the counted quantity (records an adjustment)
         </label>
