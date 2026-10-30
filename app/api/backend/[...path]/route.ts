@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { requireAuth } from '@/lib/permissions'
 
 export const dynamic = 'force-dynamic'
 // Render's free plan spins down; a cold start can take ~30s to answer the first request.
@@ -11,6 +12,25 @@ const BACKEND_ORIGIN = (
   process.env.NEXT_PUBLIC_BACKEND_URL ??
   'https://barflow-rk55.onrender.com'
 ).replace(/\/+$/, '')
+
+/**
+ * Only the legacy inventory and reporting endpoints are bridged. Without a list this route is
+ * an open proxy: anyone could reach any path on the upstream service through our origin, and
+ * the upstream sees our server's address rather than the caller's.
+ */
+const ALLOWED_PREFIXES = [
+  '/auth',
+  '/v1/auth',
+  '/v1/inventory',
+  '/v1/stock',
+  '/v1/sales',
+  '/v1/tabs',
+  '/v1/reports',
+  '/v1/audit',
+  '/v1/settings',
+  '/v1/day-close',
+  '/v1/day-reopen',
+]
 
 // Only the session cookie crosses the proxy; unrelated cookies stay on the Next.js origin.
 const SESSION_COOKIE_NAMES = ['better-auth.session_token', '__Secure-better-auth.session_token']
@@ -25,10 +45,27 @@ function sessionCookieHeader(request: Request) {
   return kept.length > 0 ? kept.join('; ') : null
 }
 
+function isAllowed(path: string) {
+  return ALLOWED_PREFIXES.some((prefix) => path === prefix || path.startsWith(`${prefix}/`))
+}
+
 async function forward(request: Request, context: { params: Promise<{ path: string[] }> }) {
   const { path } = await context.params
   if (path.some((segment) => segment === '..' || segment === '.' || segment === '')) {
     return NextResponse.json({ detail: 'Invalid backend path' }, { status: 400 })
+  }
+
+  // The bridge is only for signed-in staff. The upstream service validates the same cookie,
+  // but rejecting here stops anonymous traffic from ever leaving the app.
+  try {
+    await requireAuth()
+  } catch {
+    return NextResponse.json({ detail: 'Unauthorized' }, { status: 401 })
+  }
+
+  const targetPath = `/${path.join('/')}`
+  if (!isAllowed(targetPath)) {
+    return NextResponse.json({ detail: 'Endpoint not available through this app' }, { status: 404 })
   }
 
   const headers = new Headers()
@@ -40,7 +77,7 @@ async function forward(request: Request, context: { params: Promise<{ path: stri
   if (cookie) headers.set('cookie', cookie)
 
   const { search } = new URL(request.url)
-  const target = `${BACKEND_ORIGIN}/${path.join('/')}${search}`
+  const target = `${BACKEND_ORIGIN}${targetPath}${search}`
 
   try {
     const upstream = await fetch(target, {
@@ -48,6 +85,8 @@ async function forward(request: Request, context: { params: Promise<{ path: stri
       headers,
       body: request.method === 'GET' || request.method === 'HEAD' ? undefined : await request.arrayBuffer(),
       cache: 'no-store',
+      // A cold upstream must not hold the request open for the whole function budget.
+      signal: AbortSignal.timeout(30_000),
     })
 
     const responseHeaders = new Headers()

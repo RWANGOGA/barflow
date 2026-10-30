@@ -3,14 +3,16 @@ import { NextRequest, NextResponse } from 'next/server'
 import { authErrorResponse, requirePermission } from '@/lib/permissions'
 import { databaseErrorResponse } from '@/lib/db-errors'
 import { db } from '@/lib/db'
+import { regionalFor } from '@/lib/regional'
 import { addDays, startOfDay } from '@/lib/time'
 import { salePayments, sales } from '@/lib/db/schema'
 
 export async function GET(_request: NextRequest) {
   try {
     const user = await requirePermission('reports.read')
+    const { timeZone, currency } = await regionalFor(user.id)
     // Thirty whole calendar days including today, in the bar's timezone.
-    const from = addDays(startOfDay(new Date()), -29)
+    const from = addDays(startOfDay(new Date(), timeZone), -29, timeZone)
     const live = [eq(sales.userId, user.id), eq(sales.status, 'completed'), eq(sales.voided, false), gte(sales.createdAt, from)]
 
     const [rows, paymentRows] = await Promise.all([
@@ -31,7 +33,24 @@ export async function GET(_request: NextRequest) {
           return result
         }, {})).map(([method, amount]) => ({ method, amount }))
 
-    return NextResponse.json({ orders: rows.length, total: rows.reduce((sum, sale) => sum + sale.total, 0), byPayment, rows })
+    // Historic sales keep the currency they were taken in; flag a window that straddles two.
+    const byCurrency = Object.entries(rows.reduce<Record<string, number>>((result, sale) => {
+      const code = sale.currency ?? currency
+      result[code] = (result[code] ?? 0) + sale.total
+      return result
+    }, {})).map(([code, amount]) => ({ currency: code, total: amount }))
+
+    return NextResponse.json({
+      orders: rows.length,
+      total: rows.reduce((sum, sale) => sum + sale.total, 0),
+      taxTotal: rows.reduce((sum, sale) => sum + sale.taxTotal, 0),
+      currency,
+      timeZone,
+      by_currency: byCurrency,
+      mixed_currency: byCurrency.some((row) => row.currency !== currency),
+      byPayment,
+      rows,
+    })
   } catch (error) {
     return authErrorResponse(error) ?? databaseErrorResponse(error) ?? NextResponse.json({ error: 'Could not load reports' }, { status: 500 })
   }

@@ -1,8 +1,10 @@
 import { and, desc, eq, sql } from 'drizzle-orm'
 import { NextResponse } from 'next/server'
 import { authErrorResponse, requirePermission } from '@/lib/permissions'
+import { isWholeInRange } from '@/lib/limits'
 import { auditEvent } from '@/lib/audit'
 import { db } from '@/lib/db'
+import { regionalFor } from '@/lib/regional'
 import { businessDate } from '@/lib/time'
 import { products, stockDeliveries, stockMovements, auditLogs } from '@/lib/db/schema'
 
@@ -32,12 +34,11 @@ export async function POST(request: Request) {
     // A malformed date would reach a `date` column and fail the whole request at the driver.
     const deliveryDate = typeof body.delivery_date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(body.delivery_date)
       ? body.delivery_date
-      : businessDate()
+      : businessDate(new Date(), (await regionalFor(user.id)).timeZone)
 
-    if (!Number.isInteger(quantity) || quantity <= 0 || !Number.isInteger(costPrice) || costPrice < 0) {
+    if (!isWholeInRange(quantity, undefined, 1) || !isWholeInRange(costPrice)) {
       return NextResponse.json({ error: 'Invalid delivery values' }, { status: 400 })
     }
-
     const delivery = await db.transaction(async (tx) => {
       const [product] = await tx
         .select({ id: products.id, name: products.name })

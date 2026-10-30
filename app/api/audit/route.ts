@@ -4,7 +4,9 @@ import { NextResponse } from 'next/server'
 import { authErrorResponse, requirePermission } from '@/lib/permissions'
 import { databaseErrorResponse } from '@/lib/db-errors'
 import { db } from '@/lib/db'
-import { addDays, BAR_TIME_ZONE, businessDate, startOfDay } from '@/lib/time'
+import { csvSafe } from '@/lib/locale'
+import { regionalFor } from '@/lib/regional'
+import { addDays, businessDate, startOfDay } from '@/lib/time'
 import { auditLogs, user as users } from '@/lib/db/schema'
 
 const DEFAULT_LIMIT = 100
@@ -12,21 +14,21 @@ const MAX_LIMIT = 300
 const EXPORT_LIMIT = 20000
 
 /** Parse a business date as the UTC instant of local midnight, matching the bar's timezone. */
-function boundary(value: string | null, exclusiveNextDay = false) {
+function boundary(value: string | null, timeZone: string, exclusiveNextDay = false) {
   if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return null
   // Noon UTC always falls on the same calendar date in the bar's zone.
   const noon = new Date(`${value}T12:00:00.000Z`)
   if (Number.isNaN(noon.getTime())) return null
-  const start = startOfDay(noon)
-  return exclusiveNextDay ? addDays(start, 1) : start
+  const start = startOfDay(noon, timeZone)
+  return exclusiveNextDay ? addDays(start, 1, timeZone) : start
 }
 
 /** Preset windows are computed on the server so a browser in another timezone cannot shift them. */
-function periodStart(period: string | null): Date | null {
-  const today = startOfDay(new Date())
+function periodStart(period: string | null, timeZone: string): Date | null {
+  const today = startOfDay(new Date(), timeZone)
   if (period === 'today') return today
-  if (period === '7d') return addDays(today, -6)
-  if (period === '30d') return addDays(today, -29)
+  if (period === '7d') return addDays(today, -6, timeZone)
+  if (period === '30d') return addDays(today, -29, timeZone)
   return null
 }
 
@@ -36,7 +38,8 @@ function escapeLike(value: string) {
 
 function csvCell(value: unknown): string {
   if (value === null || value === undefined) return ''
-  const text = typeof value === 'object' ? JSON.stringify(value) : String(value)
+  // Formula-looking text is neutralised before quoting, so a name like "=cmd" stays inert.
+  const text = typeof value === 'object' ? JSON.stringify(value) : String(csvSafe(value))
   return /[",\n\r]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text
 }
 
@@ -72,9 +75,10 @@ export async function GET(request: Request) {
     const toParam = url.searchParams.get('to')
     const search = (url.searchParams.get('q') ?? '').trim().slice(0, 120)
     const format = url.searchParams.get('format')
-    const customFrom = boundary(fromParam)
-    const customTo = boundary(toParam, true)
-    const from = customFrom ?? periodStart(period)
+    const timeZone = (await regionalFor(user.id)).timeZone
+    const customFrom = boundary(fromParam, timeZone)
+    const customTo = boundary(toParam, timeZone, true)
+    const from = customFrom ?? periodStart(period, timeZone)
     const to = customTo
     const defaultLimit = format === 'csv' ? EXPORT_LIMIT : DEFAULT_LIMIT
     const requestedLimit = Number(url.searchParams.get('limit') ?? defaultLimit)
@@ -194,8 +198,8 @@ export async function GET(request: Request) {
       limit,
       offset,
       hasMore: total > offset + rows.length,
-      businessDate: businessDate(),
-      timeZone: BAR_TIME_ZONE,
+      businessDate: businessDate(new Date(), timeZone),
+      timeZone,
       facets: {
         actions: actionFacets.sort((a, b) => b.count - a.count),
         entityTypes: entityFacets.filter((facet) => facet.entityType).sort((a, b) => b.count - a.count),

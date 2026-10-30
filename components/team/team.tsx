@@ -14,6 +14,7 @@ import {
   UsersRound,
   X,
 } from 'lucide-react'
+import { formatDate, readCachedRegional } from '@/lib/locale'
 
 type Role = 'Owner' | 'Admin' | 'Manager' | 'Cashier' | 'Storekeeper'
 
@@ -47,7 +48,7 @@ type TeamData = {
 }
 
 const dateLabel = (value?: string | null) =>
-  value ? new Date(value).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '—'
+  value ? formatDate(value, readCachedRegional()) : '—'
 
 const roleTone: Record<Role, string> = {
   Owner: 'border-[#d8b9ff] bg-[#fbefff] text-[#8250df]',

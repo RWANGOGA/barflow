@@ -1,6 +1,7 @@
 import { and, eq, sql } from 'drizzle-orm'
 import { NextResponse } from 'next/server'
 import { authErrorResponse, requirePermission } from '@/lib/permissions'
+import { isWholeInRange } from '@/lib/limits'
 import { auditEvent } from '@/lib/audit'
 import { db } from '@/lib/db'
 import { products, stockMovements, auditLogs } from '@/lib/db/schema'
@@ -11,7 +12,8 @@ export async function POST(request: Request) {
     const body = await request.json()
     const quantity = Number(body.quantity)
 
-    if (!Number.isInteger(quantity) || quantity <= 0) {
+    // A per-unit integer column holds 32 bits: cap it here so the driver cannot fail with a 500.
+    if (!isWholeInRange(quantity, undefined, 1)) {
       return NextResponse.json({ error: 'Invalid quantity' }, { status: 400 })
     }
 

@@ -3,14 +3,15 @@ import type { SQL } from 'drizzle-orm'
 import type { AnyPgColumn, PgTable } from 'drizzle-orm/pg-core'
 import { NextResponse } from 'next/server'
 import { authErrorResponse, requirePermission } from '@/lib/permissions'
-import { addDays, BAR_TIME_ZONE, startOfDay } from '@/lib/time'
+import { csvSafe } from '@/lib/locale'
+import { regionalFor } from '@/lib/regional'
+import { addDays, startOfDay } from '@/lib/time'
 import { createZip } from '@/lib/zip'
 import { db } from '@/lib/db'
 import {
   auditLogs,
   discounts,
   inventoryCounts,
-  menuStockLinks,
   products,
   receipts,
   saleItems,
@@ -20,7 +21,6 @@ import {
   stockCounts,
   stockDeliveries,
   stockMovements,
-  stockTransfers,
   tabItems,
   tabs,
   teamMembers,
@@ -52,11 +52,9 @@ const TABLES: Record<string, ExportEntry> = {
   bar_tab_item: { label: 'tab-items', table: tabItems, userId: tabItems.userId, dateColumn: tabItems.createdAt },
   bar_stock_movement: { label: 'stock-movements', table: stockMovements, userId: stockMovements.userId, dateColumn: stockMovements.createdAt },
   bar_stock_delivery: { label: 'deliveries', table: stockDeliveries, userId: stockDeliveries.userId, dateColumn: stockDeliveries.deliveryDate, dateKind: 'date' },
-  bar_stock_transfer: { label: 'transfers', table: stockTransfers, userId: stockTransfers.userId, dateColumn: stockTransfers.createdAt },
   bar_stock_count: { label: 'stock-counts', table: stockCounts, userId: stockCounts.userId, dateColumn: stockCounts.countedAt },
   bar_inventory_count: { label: 'inventory-counts', table: inventoryCounts, userId: inventoryCounts.userId, dateColumn: inventoryCounts.createdAt },
   bar_stock_adjustment: { label: 'stock-adjustments', table: stockAdjustments, userId: stockAdjustments.userId, dateColumn: stockAdjustments.createdAt },
-  bar_menu_stock_link: { label: 'menu-stock-links', table: menuStockLinks, userId: menuStockLinks.userId, dateColumn: menuStockLinks.createdAt },
   bar_day: { label: 'trading-days', table: tradingDays, userId: tradingDays.userId, dateColumn: tradingDays.businessDate, dateKind: 'date' },
   bar_discount: { label: 'discounts', table: discounts, userId: discounts.userId, dateColumn: discounts.createdAt },
   bar_receipts: { label: 'receipts', table: receipts, userId: receipts.userId, dateColumn: receipts.createdAt },
@@ -76,11 +74,12 @@ function parseDay(value: string | null): Date | null | undefined {
 
 function csvCell(value: unknown): string {
   if (value === null || value === undefined) return ''
+  // A spreadsheet executes cells starting with =, +, - or @; neutralise them before quoting.
   const text = value instanceof Date
     ? value.toISOString()
     : typeof value === 'object'
       ? JSON.stringify(value)
-      : String(value)
+      : String(csvSafe(value))
   return /[",\n\r]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text
 }
 
@@ -92,15 +91,15 @@ function toCsv(rows: Record<string, unknown>[], columns: string[]): string {
 
 type LoadedTable = { entry: ExportEntry; columns: string[]; rows: Record<string, unknown>[] }
 
-async function loadTable(userId: string, entry: ExportEntry, from: Date | null, to: Date | null): Promise<LoadedTable> {
+async function loadTable(userId: string, entry: ExportEntry, from: Date | null, to: Date | null, timeZone: string): Promise<LoadedTable> {
   const filters: SQL[] = [eq(entry.userId, userId)]
 
   if (entry.dateColumn && entry.dateKind === 'date') {
     if (from) filters.push(sql`${entry.dateColumn} >= ${from.toISOString().slice(0, 10)}`)
     if (to) filters.push(sql`${entry.dateColumn} <= ${to.toISOString().slice(0, 10)}`)
   } else if (entry.dateColumn) {
-    if (from) filters.push(sql`${entry.dateColumn} >= ${startOfDay(from)}`)
-    if (to) filters.push(sql`${entry.dateColumn} < ${addDays(startOfDay(to), 1)}`)
+    if (from) filters.push(sql`${entry.dateColumn} >= ${startOfDay(from, timeZone)}`)
+    if (to) filters.push(sql`${entry.dateColumn} < ${addDays(startOfDay(to, timeZone), 1, timeZone)}`)
   }
 
   const base = db.select().from(entry.table).where(and(...filters))
@@ -117,6 +116,7 @@ async function loadTable(userId: string, entry: ExportEntry, from: Date | null, 
 export async function GET(request: Request) {
   try {
     const user = await requirePermission('reports.read')
+    const regional = await regionalFor(user.id)
     const url = new URL(request.url)
     const requested = url.searchParams.get('tables')?.split(',').filter(Boolean) ?? []
     const unknown = requested.filter((name) => !TABLES[name])
@@ -134,7 +134,7 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: 'The start date must be on or before the end date' }, { status: 400 })
     }
 
-    const loaded = await Promise.all(selected.map((name) => loadTable(user.id, TABLES[name], from, to)))
+    const loaded = await Promise.all(selected.map((name) => loadTable(user.id, TABLES[name], from, to, regional.timeZone)))
     const rangeTag = from && to
       ? `${from.toISOString().slice(0, 10)}_to_${to.toISOString().slice(0, 10)}`
       : from
@@ -160,7 +160,7 @@ export async function GET(request: Request) {
       `Workspace: ${user.workspaceName} (${user.workspaceId})`,
       `Exported by: ${user.name ?? user.email} (${user.role})`,
       `Generated: ${new Date().toISOString()}`,
-      `Time zone: ${BAR_TIME_ZONE}`,
+      `Time zone: ${regional.timeZone}`,
       `Range: ${from ? from.toISOString().slice(0, 10) : 'start'} to ${to ? to.toISOString().slice(0, 10) : 'today'}`,
       `Row limit: ${ROW_LIMIT} per table`,
       '',

@@ -98,6 +98,11 @@ export const sales = pgTable('bar_sale', {
   voidedAt: timestamp('voided_at', { withTimezone: true }),
   tenderedAmount: integer('tendered_amount'),
   changeDue: integer('change_due'),
+  /** Currency and tax are snapshotted so a reprint years later stays truthful. */
+  currency: text('currency'),
+  taxRateBps: integer('tax_rate_bps').notNull().default(0),
+  taxTotal: integer('tax_total').notNull().default(0),
+  taxInclusive: boolean('tax_inclusive').notNull().default(false),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
   index('bar_sale_user_created_idx').on(table.userId, table.createdAt),
@@ -106,6 +111,8 @@ export const sales = pgTable('bar_sale', {
   check('bar_sale_status_check', sql`${table.status} IN ('completed', 'voided')`),
   check('bar_sale_tendered_amount_check', sql`${table.tenderedAmount} IS NULL OR ${table.tenderedAmount} >= 0`),
   check('bar_sale_change_due_check', sql`${table.changeDue} IS NULL OR ${table.changeDue} >= 0`),
+  check('bar_sale_tax_rate_check', sql`${table.taxRateBps} >= 0 AND ${table.taxRateBps} <= 10000`),
+  check('bar_sale_tax_total_check', sql`${table.taxTotal} >= 0`),
 ])
 
 export const saleItems = pgTable('bar_sale_item', {
@@ -138,7 +145,7 @@ export const salePayments = pgTable('bar_sale_payment', {
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
   index('bar_sale_payment_sale_idx').on(table.saleId),
-  check('bar_sale_payment_method_check', sql`${table.method} IN ('cash', 'mobile_money', 'card')`),
+  check('bar_sale_payment_method_check', sql`${table.method} IN ('cash', 'mobile_money', 'card', 'bank_transfer', 'voucher', 'other')`),
   check('bar_sale_payment_amount_check', sql`${table.amount} > 0`),
 ])
 

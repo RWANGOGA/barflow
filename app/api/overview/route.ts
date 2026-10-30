@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server'
 import { authErrorResponse, requireAuth } from '@/lib/permissions'
 import { databaseErrorResponse } from '@/lib/db-errors'
 import { db } from '@/lib/db'
+import { regionalFor } from '@/lib/regional'
 import { addDays, businessDate, formatBarTime, startOfDay, zonedParts } from '@/lib/time'
 import { discounts, products, saleItems, salePayments, sales, tabs, tradingDays } from '@/lib/db/schema'
 
@@ -26,21 +27,21 @@ function range(value: string | null): RangeKey {
   return value && value in labels ? value as RangeKey : 'week'
 }
 
-function startFor(value: RangeKey, now: Date): Date | null {
+function startFor(value: RangeKey, now: Date, timeZone: string): Date | null {
   if (value === 'all') return null
-  const start = startOfDay(now)
+  const start = startOfDay(now, timeZone)
   if (value === 'today') return start
-  if (value === 'week') return addDays(start, -6)
-  if (value === 'month') return addDays(start, -29)
-  if (value === 'two_months') return addDays(start, -59)
+  if (value === 'week') return addDays(start, -6, timeZone)
+  if (value === 'month') return addDays(start, -29, timeZone)
+  if (value === 'two_months') return addDays(start, -59, timeZone)
   // Noon UTC always falls on the same calendar date in the bar's zone, so this lands on 1 January.
-  return startOfDay(new Date(Date.UTC(zonedParts(now).year, 0, 1, 12)))
+  return startOfDay(new Date(Date.UTC(zonedParts(now, timeZone).year, 0, 1, 12)), timeZone)
 }
 
 /** The equally long window immediately before the selected range, for deltas. */
-function previousWindow(value: RangeKey, start: Date | null, now: Date) {
+function previousWindow(value: RangeKey, start: Date | null, now: Date, timeZone: string) {
   if (!start) return null
-  const today = startOfDay(now)
+  const today = startOfDay(now, timeZone)
   const span = Math.max(today.getTime() - start.getTime(), 24 * 60 * 60 * 1000)
   return { from: new Date(start.getTime() - span), to: start }
 }
@@ -52,9 +53,9 @@ const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep
  * Build the chart from real rows. Granularity follows the range so a bar always shows
  * something meaningful: hours today, days this week/month, weeks for two months, months beyond.
  */
-function buildSeries(value: RangeKey, rows: { total: number; createdAt: Date }[], now: Date): SeriesPoint[] {
+function buildSeries(value: RangeKey, rows: { total: number; createdAt: Date }[], now: Date, timeZone: string): SeriesPoint[] {
   // Zone parts are computed once per sale rather than once per bucket.
-  const prepared = rows.map((row) => ({ ...row, parts: zonedParts(row.createdAt) }))
+  const prepared = rows.map((row) => ({ ...row, parts: zonedParts(row.createdAt, timeZone) }))
   const bucket = (label: string, tooltip: string, matches: (row: (typeof prepared)[number]) => boolean): SeriesPoint => {
     const selected = prepared.filter(matches)
     return { label, tooltip, total: sum(selected), orders: selected.length }
@@ -62,7 +63,7 @@ function buildSeries(value: RangeKey, rows: { total: number; createdAt: Date }[]
 
   if (value === 'mid_year' || value === 'all') {
     const months = value === 'all' ? 12 : 6
-    const current = zonedParts(now)
+    const current = zonedParts(now, timeZone)
     return Array.from({ length: months }, (_, index) => {
       const ordinal = current.year * 12 + (current.month - 1) - (months - 1 - index)
       const year = Math.floor(ordinal / 12)
@@ -76,7 +77,7 @@ function buildSeries(value: RangeKey, rows: { total: number; createdAt: Date }[]
   }
 
   if (value === 'today') {
-    const today = zonedParts(now)
+    const today = zonedParts(now, timeZone)
     return Array.from({ length: 24 }, (_, hour) => bucket(
       `${String(hour).padStart(2, '0')}:00`,
       `${String(hour).padStart(2, '0')}:00–${String(hour).padStart(2, '0')}:59`,
@@ -85,16 +86,16 @@ function buildSeries(value: RangeKey, rows: { total: number; createdAt: Date }[]
   }
 
   // Tomorrow at local midnight, so the last daily bucket always ends with today.
-  const anchor = addDays(startOfDay(now), 1)
+  const anchor = addDays(startOfDay(now, timeZone), 1, timeZone)
 
   if (value === 'two_months') {
     const weeks = 9
     return Array.from({ length: weeks }, (_, index) => {
-      const end = addDays(anchor, -(weeks - 1 - index) * 7)
-      const start = addDays(end, -7)
+      const end = addDays(anchor, -(weeks - 1 - index) * 7, timeZone)
+      const start = addDays(end, -7, timeZone)
       return bucket(
-        formatBarTime(start, { day: 'numeric', month: 'short' }),
-        `${formatBarTime(start, { day: 'numeric', month: 'short' })} – ${formatBarTime(new Date(end.getTime() - 1), { day: 'numeric', month: 'short' })}`,
+        formatBarTime(start, { day: 'numeric', month: 'short' }, timeZone),
+        `${formatBarTime(start, { day: 'numeric', month: 'short' }, timeZone)} – ${formatBarTime(new Date(end.getTime() - 1), { day: 'numeric', month: 'short' }, timeZone)}`,
         (row) => row.createdAt >= start && row.createdAt < end,
       )
     })
@@ -102,11 +103,11 @@ function buildSeries(value: RangeKey, rows: { total: number; createdAt: Date }[]
 
   const days = value === 'week' ? 7 : 30
   return Array.from({ length: days }, (_, index) => {
-    const start = addDays(anchor, -(days - index))
-    const end = addDays(start, 1)
+    const start = addDays(anchor, -(days - index), timeZone)
+    const end = addDays(start, 1, timeZone)
     return bucket(
-      value === 'week' ? formatBarTime(start, { weekday: 'short' }) : formatBarTime(start, { day: 'numeric' }),
-      formatBarTime(start, { weekday: 'short', day: 'numeric', month: 'short' }),
+      value === 'week' ? formatBarTime(start, { weekday: 'short' }, timeZone) : formatBarTime(start, { day: 'numeric' }, timeZone),
+      formatBarTime(start, { weekday: 'short', day: 'numeric', month: 'short' }, timeZone),
       (row) => row.createdAt >= start && row.createdAt < end,
     )
   })
@@ -132,10 +133,12 @@ export async function GET(request: Request) {
 
   const selected = range(new URL(request.url).searchParams.get('range'))
   const now = new Date()
-  const todayStart = startOfDay(now)
-  const yesterdayStart = addDays(todayStart, -1)
-  const start = startFor(selected, now)
-  const previous = previousWindow(selected, start, now)
+  // Day boundaries, chart buckets and the trading-day lookup all use the bar's own clock.
+  const timeZone = (await regionalFor(user.id)).timeZone
+  const todayStart = startOfDay(now, timeZone)
+  const yesterdayStart = addDays(todayStart, -1, timeZone)
+  const start = startFor(selected, now, timeZone)
+  const previous = previousWindow(selected, start, now, timeZone)
 
   // Only completed, non-voided sales count toward revenue. The filter lives in SQL so a
   // large history never has to travel to the function.
@@ -147,7 +150,7 @@ export async function GET(request: Request) {
     const [tradingDay] = await db
       .select()
       .from(tradingDays)
-      .where(and(eq(tradingDays.userId, user.id), or(eq(tradingDays.status, 'open'), eq(tradingDays.businessDate, businessDate(now)))))
+      .where(and(eq(tradingDays.userId, user.id), or(eq(tradingDays.status, 'open'), eq(tradingDays.businessDate, businessDate(now, timeZone)))))
       .orderBy(desc(tradingDays.openedAt))
       .limit(1)
     const cashStart = tradingDay?.openedAt ?? todayStart
@@ -367,7 +370,7 @@ export async function GET(request: Request) {
       openTabsValue,
       openTabsStatus: openTabRows.length ? 'Needs attention' : 'All settled',
       byPayment,
-      series: buildSeries(selected, rangeRows, now),
+      series: buildSeries(selected, rangeRows, now, timeZone),
       topProducts: productRows,
       lowStock: { count: lowStockRows.length, items: lowStockRows.slice(0, 6) },
       cashDrawer: {

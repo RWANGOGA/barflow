@@ -1,10 +1,12 @@
 import { and, eq, gte, sql } from 'drizzle-orm'
 import { NextResponse } from 'next/server'
 import { authErrorResponse, requireAuth, requirePermission } from '@/lib/permissions'
+import { isWholeInRange } from '@/lib/limits'
 import { auditEvent } from '@/lib/audit'
 import { databaseErrorResponse } from '@/lib/db-errors'
 import { currentTradingDay } from '@/lib/day'
 import { db } from '@/lib/db'
+import { regionalFor } from '@/lib/regional'
 import { businessDate } from '@/lib/time'
 import { auditLogs, salePayments, sales, tabs, tradingDays } from '@/lib/db/schema'
 
@@ -53,10 +55,12 @@ export async function POST(request: Request) {
     const body = await request.json()
     const action = String(body.action)
     const current = await currentTradingDay(userId)
+    // A new day is stamped with the workspace clock, not the server's UTC date.
+    const timeZone = (await regionalFor(userId)).timeZone
 
     if (action === 'open') {
       const openingFloat = Number(body.openingFloat ?? 0)
-      if (!Number.isInteger(openingFloat) || openingFloat < 0) {
+      if (!isWholeInRange(openingFloat)) {
         return NextResponse.json({ error: 'Opening float must be a whole amount of 0 or more.' }, { status: 400 })
       }
       if (current) {
@@ -71,7 +75,7 @@ export async function POST(request: Request) {
       const day = {
         id: crypto.randomUUID(),
         userId,
-        businessDate: businessDate(),
+        businessDate: businessDate(new Date(), timeZone),
         status: 'open',
         openingFloat,
       }
@@ -85,7 +89,7 @@ export async function POST(request: Request) {
       const openTabs = await db.select().from(tabs).where(and(eq(tabs.userId, userId), eq(tabs.status, 'open'))).limit(1)
       if (openTabs.length > 0) return NextResponse.json({ error: 'Open tabs must be settled before closing.' }, { status: 400 })
       const countedCash = Number(body.countedCash)
-      if (!Number.isInteger(countedCash) || countedCash < 0) {
+      if (!isWholeInRange(countedCash)) {
         return NextResponse.json({ error: 'Counted cash must be a whole amount of 0 or more.' }, { status: 400 })
       }
       const expectedCash = await expectedCashFor(userId, current.openingFloat ?? 0, current.openedAt)

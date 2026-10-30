@@ -18,12 +18,15 @@ try {
   if (parsedURL.protocol !== 'http:' && parsedURL.protocol !== 'https:') {
     throw new Error('Unsupported protocol')
   }
-  if (process.env.NODE_ENV === 'production' && parsedURL.protocol !== 'https:') {
+  // Loopback is a secure context in every browser, so a production build served from
+  // localhost (CI, Docker, `next start` on a till) must not be forced onto TLS.
+  const loopback = ['localhost', '127.0.0.1', '::1', '[::1]', '0.0.0.0'].includes(parsedURL.hostname)
+  if (process.env.NODE_ENV === 'production' && parsedURL.protocol !== 'https:' && !loopback) {
     throw new Error('Production BETTER_AUTH_URL must use HTTPS')
   }
   authOrigin = parsedURL.origin
 } catch {
-  throw new Error('BETTER_AUTH_URL must be a valid absolute HTTP(S) URL (HTTPS in production).')
+  throw new Error('BETTER_AUTH_URL must be a valid absolute HTTP(S) URL (HTTPS in production, except on loopback).')
 }
 
 if (authSecret.length < 32) {
@@ -57,6 +60,28 @@ export const auth = betterAuth({
   emailAndPassword: {
     enabled: true,
     autoSignIn: true,
+    // Long enough to resist offline guessing, short enough that no password manager complains.
+    minPasswordLength: 8,
+    maxPasswordLength: 128,
+  },
+
+  /**
+   * Throttle credential endpoints. A till on a shared network is exactly the place where an
+   * unattended sign-in form gets hammered; without this, Better Auth would accept unlimited
+   * password guesses from one address.
+   */
+  rateLimit: {
+    enabled: true,
+    window: 60,
+    max: 120,
+    customRules: {
+      '/sign-in/email': { window: 60, max: 8 },
+      '/sign-up/email': { window: 300, max: 5 },
+      '/change-password': { window: 300, max: 5 },
+      '/set-password': { window: 300, max: 5 },
+      '/forget-password': { window: 300, max: 3 },
+      '/reset-password': { window: 300, max: 5 },
+    },
   },
 
   // Self-registered accounts start with the least-privileged supported role.

@@ -3,15 +3,16 @@ import { NextResponse } from 'next/server'
 import { authErrorResponse, requirePermission } from '@/lib/permissions'
 import { databaseErrorResponse } from '@/lib/db-errors'
 import { db } from '@/lib/db'
+import { regionalFor } from '@/lib/regional'
 import { addDays, businessDate, startOfDay } from '@/lib/time'
 import { discounts, products, saleItems, sales, stockMovements, tradingDays } from '@/lib/db/schema'
 
 /** A business date as the UTC instant of local midnight, or null when the value is not a date. */
-function dayBounds(value: string | null) {
-  const date = value && /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : businessDate()
+function dayBounds(value: string | null, timeZone: string) {
+  const date = value && /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : businessDate(new Date(), timeZone)
   // Noon UTC always falls on the same calendar date in the bar's zone.
-  const start = startOfDay(new Date(`${date}T12:00:00.000Z`))
-  return { date, start, end: addDays(start, 1) }
+  const start = startOfDay(new Date(`${date}T12:00:00.000Z`), timeZone)
+  return { date, start, end: addDays(start, 1, timeZone) }
 }
 
 export async function GET(request: Request) {
@@ -19,7 +20,8 @@ export async function GET(request: Request) {
     const user = await requirePermission('reports.read')
     const userId = user.id
     const url = new URL(request.url)
-    const { date: businessDateValue, start, end } = dayBounds(url.searchParams.get('business_date'))
+    const { timeZone, currency } = await regionalFor(userId)
+    const { date: businessDateValue, start, end } = dayBounds(url.searchParams.get('business_date'), timeZone)
 
     const [day] = await db
       .select()
@@ -32,7 +34,7 @@ export async function GET(request: Request) {
 
     const [daySales, [discountTotals], [wastage], [costTotals]] = await Promise.all([
       db
-        .select({ total: sales.total, paymentMethod: sales.paymentMethod, status: sales.status, voided: sales.voided })
+        .select({ total: sales.total, taxTotal: sales.taxTotal, currency: sales.currency, paymentMethod: sales.paymentMethod, status: sales.status, voided: sales.voided })
         .from(sales)
         .where(and(...inDay)),
       db
@@ -81,11 +83,22 @@ export async function GET(request: Request) {
     const drinkSales = costTotals?.revenue ?? 0
     const drinkCost = costTotals?.cost ?? 0
     const pourCost = drinkSales > 0 ? Math.round((drinkCost / drinkSales) * 10000) / 100 : 0
+    // A day that straddles a currency change cannot be summed into one figure honestly.
+    const byCurrency = Object.entries(paidSales.reduce<Record<string, number>>((result, sale) => {
+      const code = sale.currency ?? currency
+      result[code] = (result[code] ?? 0) + sale.total
+      return result
+    }, {})).map(([code, amount]) => ({ currency: code, total: amount }))
 
     return NextResponse.json({
       business_date: businessDateValue,
       orders,
       total_sales: totalSales,
+      tax_total: paidSales.reduce((sum, sale) => sum + sale.taxTotal, 0),
+      currency,
+      timeZone,
+      by_currency: byCurrency,
+      mixed_currency: byCurrency.some((row) => row.currency !== currency),
       by_payment: byPayment.map(([method, totals]) => ({ payment_method: method, orders: totals.orders, total: totals.total })),
       voids,
       discounts: discountTotals?.value ?? 0,

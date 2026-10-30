@@ -44,7 +44,7 @@ export const PERMISSION_LABELS: Record<Permission, string> = {
   'team.manage': 'Team and invitations',
   'settings.read': 'View business settings',
   'settings.write': 'Change business settings',
-  'inventory.manage': 'Stock, deliveries and transfers',
+  'inventory.manage': 'Stock, deliveries, wastage and counts',
   'day.close': 'Open and close the trading day',
   'sales.read': 'View sales',
   'sales.create': 'Record sales and payments',
@@ -95,8 +95,36 @@ export function normalizeRole(value: unknown): Role | null {
 
 export type SessionUser = { id: string; name?: string | null; email?: string | null }
 
+/**
+ * Reject browser requests that did not originate from this app.
+ *
+ * The session cookie alone cannot prove intent: Better Auth uses SameSite=None in development
+ * (and Lax in production), both of which still travel with cross-site form posts. Browsers set
+ * `Sec-Fetch-Site` on every request, so a cross-origin submit is refused before any write runs.
+ * Requests without the header (curl, server-to-server, older clients) are allowed through.
+ */
+async function assertTrustedOrigin() {
+  const headerList = await headers()
+  const site = headerList.get('sec-fetch-site')?.trim().toLowerCase()
+  if (site && !['same-origin', 'same-site', 'none'].includes(site)) {
+    throw new AccessControlError('Cross-site request blocked', 403)
+  }
+
+  const origin = headerList.get('origin')
+  if (!origin) return
+  const host = (headerList.get('x-forwarded-host') ?? headerList.get('host') ?? '').split(',')[0]?.trim()
+  if (!host) return
+  try {
+    if (new URL(origin).host !== host) throw new AccessControlError('Cross-site request blocked', 403)
+  } catch (error) {
+    if (error instanceof AccessControlError) throw error
+    throw new AccessControlError('Cross-site request blocked', 403)
+  }
+}
+
 /** Session identity only. Used by sign-up completion, where creating a workspace too early would be wrong. */
 export async function requireSessionUser(): Promise<SessionUser> {
+  await assertTrustedOrigin()
   const session = await auth.api.getSession({ headers: await headers() })
   if (!session?.user) throw new AccessControlError('Unauthorized', 401)
   return { id: session.user.id, name: session.user.name, email: session.user.email }
@@ -134,6 +162,22 @@ async function readWorkspace(userId: string): Promise<WorkspaceMembership | null
 async function resolveWorkspace(user: SessionUser): Promise<WorkspaceMembership> {
   const existing = await readWorkspace(user.id)
   if (existing) return existing
+
+  // A suspended or dormant membership must not silently turn into a brand-new bar, which
+  // would quietly re-grant access to someone the owner has stood down.
+  const [inactive] = await db
+    .select({ id: memberships.id, status: memberships.status })
+    .from(memberships)
+    .where(eq(memberships.userId, user.id))
+    .limit(1)
+  if (inactive) {
+    throw new AccessControlError(
+      inactive.status === 'suspended'
+        ? 'Your workspace access is suspended. Ask the owner to restore it.'
+        : 'No active workspace membership. Ask the owner for a new invitation.',
+      403,
+    )
+  }
 
   const workspaceId = `ws_${user.id}`
   const firstName = (user.name ?? '').trim().split(/\s+/)[0]
@@ -200,6 +244,8 @@ export type CurrentUser = NonNullable<Awaited<ReturnType<typeof getCurrentUser>>
 
 /** Require an authenticated Better Auth session backed by an existing user row. */
 export async function requireAuth() {
+  // Only API callers pass through here, so the cross-site check belongs at this boundary.
+  await assertTrustedOrigin()
   const user = await getCurrentUser()
   if (!user) throw new AccessControlError('Unauthorized', 401)
   return user

@@ -2,11 +2,13 @@ import { eq } from 'drizzle-orm'
 import { NextResponse } from 'next/server'
 import { authErrorResponse, requirePermission } from '@/lib/permissions'
 import { db } from '@/lib/db'
+import { regionalFor } from '@/lib/regional'
 import { products } from '@/lib/db/schema'
 
 export async function GET() {
   try {
     const user = await requirePermission('reports.read')
+    const { currency } = await regionalFor(user.id)
     const rows = await db.select().from(products).where(eq(products.userId, user.id))
     const items = rows.map((product) => ({
       id: product.id,
@@ -20,6 +22,7 @@ export async function GET() {
 
     return NextResponse.json({
       items,
+      currency,
       total_value_at_cost: items.reduce((sum, item) => sum + item.value_at_cost, 0),
       total_value_at_selling: items.reduce((sum, item) => sum + item.value_at_selling, 0),
     })

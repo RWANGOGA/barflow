@@ -5,7 +5,12 @@ import { authErrorResponse, requirePermission } from '@/lib/permissions'
 import { databaseErrorResponse } from '@/lib/db-errors'
 import { DAY_LOCKED_ERROR, isDayLocked } from '@/lib/day'
 import { db } from '@/lib/db'
+import { taxBreakdown } from '@/lib/locale'
+import { regionalFor } from '@/lib/regional'
 import { idempotencyKeys, products, receiptCounter, receipts, saleItems, salePayments, sales, stockMovements } from '@/lib/db/schema'
+
+/** Guards the integer columns: a line total or basket above this is a mistake, not a sale. */
+const MAX_AMOUNT = 1_000_000_000
 
 export async function GET() {
   try {
@@ -22,6 +27,8 @@ export async function POST(request: Request) {
     const user = await requirePermission('sales.create')
     const userId = user.id
     if (await isDayLocked(userId)) return NextResponse.json({ error: DAY_LOCKED_ERROR }, { status: 409 })
+    // Currency, tax and enabled payment methods are workspace policy, not client choices.
+    const regional = await regionalFor(userId)
     const body = await request.json()
     const requestedItems: { productId: string; quantity: number; note: string | null }[] = Array.isArray(body.items)
       ? body.items.slice(0, 100).map((item: any) => ({ productId: String(item.productId), quantity: Number(item.quantity), note: item.note ? String(item.note).slice(0, 200) : null }))
@@ -31,15 +38,15 @@ export async function POST(request: Request) {
       ? body.payment_items.slice(0, 10).map((payment: any) => ({ method: normalisePayment(payment.method), amount: Number(payment.amount) }))
       : null
     const paymentMethod = normalisePayment(body.paymentMethod)
-    const allowedPayments = new Set(['cash', 'mobile_money', 'card'])
+    const allowedPayments = new Set(regional.paymentMethods)
     const tenderedAmount = body.tendered_amount != null ? Number(body.tendered_amount) : null
     const idempotencyKey = typeof body.idempotencyKey === 'string' && body.idempotencyKey.trim() ? body.idempotencyKey.trim().slice(0, 100) : null
 
     if (!allowedPayments.has(paymentMethod)) return NextResponse.json({ error: 'Invalid payment method' }, { status: 400 })
-    if (tenderedAmount != null && (!Number.isInteger(tenderedAmount) || tenderedAmount < 0)) {
+    if (tenderedAmount != null && (!Number.isInteger(tenderedAmount) || tenderedAmount < 0 || tenderedAmount > MAX_AMOUNT)) {
       return NextResponse.json({ error: 'Invalid tendered amount' }, { status: 400 })
     }
-    if (requestedItems.length === 0 || requestedItems.some((item) => !item.productId || !Number.isInteger(item.quantity) || item.quantity <= 0)) {
+    if (requestedItems.length === 0 || requestedItems.some((item) => !item.productId || !Number.isInteger(item.quantity) || item.quantity <= 0 || item.quantity > 100000)) {
       return NextResponse.json({ error: 'Invalid sale items' }, { status: 400 })
     }
     // The same drink can be scanned twice; price it once and guard the combined quantity.
@@ -58,15 +65,19 @@ export async function POST(request: Request) {
       if (request.quantity > product.stock) throw new Error(`Insufficient stock for ${product.name}`)
       return { productId: product.id, name: product.name, category: product.category, quantity: request.quantity, price: product.price, lineTotal: product.price * request.quantity, note: request.note }
     })
-    const total = items.reduce((sum, item) => sum + item.lineTotal, 0)
-    if (!Number.isInteger(total) || total <= 0) return NextResponse.json({ error: 'Invalid total' }, { status: 400 })
+    const subtotal = items.reduce((sum, item) => sum + item.lineTotal, 0)
+    // The shelf prices are net or gross depending on the workspace tax setting; the customer
+    // is charged `breakdown.total` either way, and the tax slice is snapshotted on the sale.
+    const breakdown = taxBreakdown(subtotal, regional)
+    const total = breakdown.total
+    if (!Number.isSafeInteger(total) || total <= 0 || total > MAX_AMOUNT) return NextResponse.json({ error: 'Invalid total' }, { status: 400 })
 
     let changeDue = 0
     const paymentItems: { method: string; amount: number }[] = requestedPayments ?? [{ method: paymentMethod, amount: total }]
     if (requestedPayments && paymentItems.reduce((sum, payment) => sum + payment.amount, 0) !== total) {
       return NextResponse.json({ error: 'Payment items do not add up to the sale total' }, { status: 400 })
     }
-    if (paymentItems.some((payment) => !allowedPayments.has(payment.method) || !Number.isInteger(payment.amount) || payment.amount <= 0)) {
+    if (paymentItems.some((payment) => !allowedPayments.has(payment.method) || !Number.isInteger(payment.amount) || payment.amount <= 0 || payment.amount > MAX_AMOUNT)) {
       return NextResponse.json({ error: 'Invalid payment details' }, { status: 400 })
     }
     // Only the cash part of a split payment can produce change.
@@ -78,8 +89,22 @@ export async function POST(request: Request) {
       changeDue = tenderedAmount - cashPortion
     }
 
-    const sale = { id: crypto.randomUUID(), userId, paymentMethod, total, tableLabel: body.tableLabel ? String(body.tableLabel).trim().slice(0, 60) || null : null, status: 'completed', tenderedAmount, changeDue, idempotencyKey }
-    const requestHash = createHash('sha256').update(JSON.stringify({ items, paymentItems, total })).digest('hex')
+    const sale = {
+      id: crypto.randomUUID(),
+      userId,
+      paymentMethod,
+      total,
+      tableLabel: body.tableLabel ? String(body.tableLabel).trim().slice(0, 60) || null : null,
+      status: 'completed',
+      tenderedAmount,
+      changeDue,
+      idempotencyKey,
+      currency: regional.currency,
+      taxRateBps: regional.taxRateBps,
+      taxTotal: breakdown.tax,
+      taxInclusive: regional.taxInclusive,
+    }
+    const requestHash = createHash('sha256').update(JSON.stringify({ items, paymentItems, total, taxTotal: breakdown.tax, currency: regional.currency })).digest('hex')
     let receiptNumber = 0
     let replayed: Record<string, unknown> | null = null
     let keyConflict = false
@@ -124,14 +149,14 @@ export async function POST(request: Request) {
           userId,
           idempotencyKey,
           requestHash,
-          responseJson: { ...sale, receiptNumber, changeDue, paymentItems },
+          responseJson: { ...sale, receiptNumber, changeDue, paymentItems, subtotal, taxTotal: breakdown.tax },
         })
       }
     })
 
     if (keyConflict) return NextResponse.json({ error: 'This idempotency key was already used for a different sale' }, { status: 409 })
     if (replayed) return NextResponse.json(replayed)
-    return NextResponse.json({ ...sale, receiptNumber, changeDue, paymentItems })
+    return NextResponse.json({ ...sale, receiptNumber, changeDue, paymentItems, subtotal, taxTotal: breakdown.tax })
   } catch (error) {
     const authResponse = authErrorResponse(error)
     if (authResponse) return authResponse

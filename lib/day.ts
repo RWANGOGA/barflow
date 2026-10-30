@@ -1,6 +1,7 @@
 import { and, desc, eq, or, sql } from 'drizzle-orm'
 import { db } from '@/lib/db'
 import { tradingDays } from '@/lib/db/schema'
+import { timeZoneFor } from '@/lib/regional'
 import { businessDate } from '@/lib/time'
 
 export const DAY_LOCKED_ERROR = 'The trading day is closed. Open a new day before recording sales or tabs.'
@@ -8,12 +9,14 @@ export const DAY_LOCKED_ERROR = 'The trading day is closed. Open a new day befor
 /**
  * The day the bar is actually trading. A late close can happen after local midnight,
  * so an open day wins over today's date; otherwise today's row is the current one.
+ * "Today" follows the workspace time zone, not the Vercel host clock.
  */
 export async function currentTradingDay(userId: string) {
+  const timeZone = await timeZoneFor(userId)
   const [day] = await db
     .select()
     .from(tradingDays)
-    .where(and(eq(tradingDays.userId, userId), or(eq(tradingDays.status, 'open'), eq(tradingDays.businessDate, businessDate()))))
+    .where(and(eq(tradingDays.userId, userId), or(eq(tradingDays.status, 'open'), eq(tradingDays.businessDate, businessDate(new Date(), timeZone)))))
     // Open first, then the newest: a legacy extra open day must never lose to a closed row.
     .orderBy(desc(sql`${tradingDays.status} = 'open'`), desc(tradingDays.openedAt))
     .limit(1)

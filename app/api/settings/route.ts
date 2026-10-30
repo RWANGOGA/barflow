@@ -4,19 +4,73 @@ import { authErrorResponse, requirePermission } from '@/lib/permissions'
 import { auditEvent } from '@/lib/audit'
 import { db } from '@/lib/db'
 import { auditLogs, settings } from '@/lib/db/schema'
-import { BAR_TIME_ZONE, businessDate } from '@/lib/time'
+import {
+  normalizeCurrency,
+  normalizeLocale,
+  normalizePaymentMethods,
+  normalizeTaxRate,
+  normalizeTimeZone,
+  readBooleanSetting,
+} from '@/lib/locale'
+import { regionalFor } from '@/lib/regional'
+import { businessDate } from '@/lib/time'
 
 type SettingEntry = { key: string; value: string }
+
+/** Free-text settings an operator may edit, with the maximum stored length. */
+const TEXT_SETTINGS: Record<string, number> = {
+  tax_id: 40,
+  receipt_address: 120,
+  receipt_phone: 40,
+  receipt_footer: 120,
+}
 
 /** Settings the UI relies on are normalised here so two tills cannot store conflicting shapes. */
 function normalizeSetting(key: string, raw: string): SettingEntry | { error: string } {
   const submitted = raw.slice(0, 1000)
+  // Clearing a receipt field is a legitimate edit, so an empty value is stored as-is.
+  if (key in TEXT_SETTINGS) {
+    return { key, value: submitted.replace(/\s+/g, ' ').trim().slice(0, TEXT_SETTINGS[key]) }
+  }
   if (!submitted.trim()) return { error: 'Invalid setting' }
 
   if (key === 'currency') {
-    const value = submitted.trim().toUpperCase()
-    if (!/^[A-Z]{2,5}$/.test(value)) return { error: 'Currency must be a 2–5 letter code such as UGX.' }
+    const value = normalizeCurrency(submitted)
+    if (!value) return { error: 'Currency must be an ISO 4217 code such as UGX, KES or USD.' }
     return { key, value }
+  }
+
+  if (key === 'locale') {
+    const value = normalizeLocale(submitted)
+    if (!value) return { error: 'Language must be a locale such as en-GB, en-US or sw-KE.' }
+    return { key, value }
+  }
+
+  if (key === 'time_zone') {
+    const value = normalizeTimeZone(submitted)
+    if (!value) return { error: 'Time zone must be an IANA name such as Africa/Kampala.' }
+    return { key, value }
+  }
+
+  if (key === 'tax_rate_bps') {
+    // The UI sends basis points; percent input is accepted too and converted exactly.
+    const value = /^\d+$/.test(submitted.trim())
+      ? Number(submitted.trim())
+      : normalizeTaxRate(submitted)
+    if (value === null || !Number.isInteger(value) || value < 0 || value > 10000) {
+      return { error: 'Tax rate must be between 0 and 100 percent.' }
+    }
+    return { key, value: String(value) }
+  }
+
+  if (key === 'tax_inclusive') {
+    const value = readBooleanSetting(submitted)
+    if (value === null) return { error: 'Tax inclusive must be true or false.' }
+    return { key, value: value ? 'true' : 'false' }
+  }
+
+  if (key === 'payment_methods') {
+    return { key, value: normalizePaymentMethods(submitted).join(',') }
   }
 
   if (key === 'bar_name') {
@@ -57,9 +111,17 @@ function readEntries(body: unknown): SettingEntry[] {
 export async function GET() {
   try {
     const user = await requirePermission('settings.read')
-    const rows = await db.select().from(settings).where(eq(settings.userId, user.id))
+    const [rows, regional] = await Promise.all([
+      db.select().from(settings).where(eq(settings.userId, user.id)),
+      regionalFor(user.id),
+    ])
     // Device clocks cannot be trusted for a bar's day, so the server states both facts.
-    return NextResponse.json({ items: rows, timeZone: BAR_TIME_ZONE, businessDate: businessDate() })
+    return NextResponse.json({
+      items: rows,
+      regional,
+      timeZone: regional.timeZone,
+      businessDate: businessDate(new Date(), regional.timeZone),
+    })
   } catch (error) {
     return authErrorResponse(error) ?? NextResponse.json({ error: 'Could not load settings' }, { status: 500 })
   }

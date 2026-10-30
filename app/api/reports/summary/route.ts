@@ -3,26 +3,28 @@ import { NextResponse } from 'next/server'
 import { authErrorResponse, requirePermission } from '@/lib/permissions'
 import { databaseErrorResponse } from '@/lib/db-errors'
 import { db } from '@/lib/db'
+import { regionalFor } from '@/lib/regional'
 import { addDays, startOfDay } from '@/lib/time'
 import { saleItems, sales } from '@/lib/db/schema'
 
 /** A business date as the UTC instant of local midnight, or null when the value is not a date. */
-function boundary(value: string | null) {
+function boundary(value: string | null, timeZone: string) {
   if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return null
-  return startOfDay(new Date(`${value}T12:00:00.000Z`))
+  return startOfDay(new Date(`${value}T12:00:00.000Z`), timeZone)
 }
 
 export async function GET(request: Request) {
   try {
     const user = await requirePermission('reports.read')
     const url = new URL(request.url)
-    const from = boundary(url.searchParams.get('from'))
-    const to = boundary(url.searchParams.get('to'))
+    const { timeZone, currency } = await regionalFor(user.id)
+    const from = boundary(url.searchParams.get('from'), timeZone)
+    const to = boundary(url.searchParams.get('to'), timeZone)
 
     const conditions = [eq(sales.userId, user.id), eq(sales.status, 'completed'), eq(sales.voided, false)]
     if (from) conditions.push(gte(sales.createdAt, from))
     // `to` is a business date, so the range includes that whole local day.
-    if (to) conditions.push(lt(sales.createdAt, addDays(to, 1)))
+    if (to) conditions.push(lt(sales.createdAt, addDays(to, 1, timeZone)))
 
     // Sale lines are filtered in SQL: loading the whole item history to throw most of it away
     // gets slower every month.
@@ -61,12 +63,25 @@ export async function GET(request: Request) {
       return result
     }, {}))
     const total = saleRows.reduce((sum, sale) => sum + sale.total, 0)
+    // Changing the workspace currency makes history straddle two currencies. Summing them
+    // into one figure would be wrong, so the report states each currency and flags the mix.
+    const byCurrency = Object.entries(saleRows.reduce<Record<string, number>>((result, sale) => {
+      const code = sale.currency ?? currency
+      result[code] = (result[code] ?? 0) + sale.total
+      return result
+    }, {})).map(([code, amount]) => ({ currency: code, total: amount }))
 
     return NextResponse.json({
       orders: saleRows.length,
       total,
+      // Tax is snapshotted per sale, so the report can state what was collected.
+      tax_total: saleRows.reduce((sum, sale) => sum + sale.taxTotal, 0),
       average_order: saleRows.length ? Math.round(total / saleRows.length) : 0,
       items_sold: items.reduce((sum, item) => sum + item.quantity, 0),
+      currency,
+      timeZone,
+      by_currency: byCurrency,
+      mixed_currency: byCurrency.some((row) => row.currency !== currency),
       by_payment: byPayment,
       by_category: byCategory,
       by_product: byProduct,
